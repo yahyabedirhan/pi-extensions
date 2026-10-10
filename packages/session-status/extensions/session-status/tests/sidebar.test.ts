@@ -7,6 +7,19 @@ import { plain } from '../view'
 
 const effects = { ping: () => undefined, linked: () => undefined, ticketReported: () => undefined }
 
+test.each([
+  ['<', '<'], ['>', '>'],
+  ['\u001b[1;2D', '<'], ['\u001b[1;2C', '>'], // xterm modified arrows
+  ['\u001b[d', '<'], ['\u001b[c', '>'], // rxvt modified arrows
+])('resize key %j maps to %s', (input, direction) => {
+  expect(keyName(input)).toBe(direction)
+})
+
+test('unmodified left and right arrows are not resize keys', () => {
+  expect(keyName('\u001b[D')).toBeNull()
+  expect(keyName('\u001b[C')).toBeNull()
+})
+
 test('narrow sidebar wraps long entries and scrolls selection within terminal height', () => {
   const store = new StatusStore('s', null, () => undefined)
   for (let n = 0; n < 20; n++) runStatusCall(store, { action: 'record_decision', question: `Question ${n} with a long description and 界 characters`, options: ['Yes', 'No'], default: 'Yes', unblocks: 'Answer', urgency: 'blocked' }, n, effects)

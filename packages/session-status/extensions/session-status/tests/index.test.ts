@@ -178,6 +178,10 @@ test('sidebar retains interaction across focus, visibility, resize and answers',
   expect(panel.handle.isFocused()).toBe(true)
   panel.component.handleInput('>')
   expect(panel.options.width).toBe(40)
+  panel.component.handleInput('\u001b[1;2D') // Shift+Left
+  expect(panel.options.width).toBe(36)
+  panel.component.handleInput('\u001b[1;2C') // Shift+Right
+  expect(panel.options.width).toBe(40)
   await command('width 52')
   expect(retainedOptions.width).toBe(52)
   await command('focus')
