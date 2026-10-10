@@ -2,6 +2,8 @@
 // theme's colours and links; tests pass one that adds nothing. The sections
 // follow the mod's pane, top to bottom, and an empty section is not drawn.
 
+import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
+
 import type { Decision, SessionLink, SessionStatus, Surprise } from './core/types'
 import { HEADLINE_TEXT, headline } from './core/hooks/activity'
 import type { Headline } from './core/hooks/activity'
@@ -23,6 +25,26 @@ export type Paint = {
 }
 
 export const plain: Paint = { fg: (_tone, text) => text, bold: text => text, link: text => text }
+
+/** A compact widget frame; keeps ANSI styling and terminal links inside the border. */
+export function widgetFrame(lines: string[], width: number, paint: Paint = plain): string[] {
+  if (lines.length === 0 || width <= 0) return []
+  if (width < 4) return lines.map(line => truncateToWidth(line, width))
+  const inner = width - 4
+  const border = (text: string) => paint.fg('muted', text)
+  const row = (text: string) => {
+    const content = truncateToWidth(text, inner)
+    return `${border('│')} ${content}${' '.repeat(Math.max(inner - visibleWidth(content), 0))} ${border('│')}`
+  }
+  const label = width >= 20 ? '─ Session status ' : ''
+  return [
+    border(`╭${label}${'─'.repeat(width - 2 - label.length)}╮`),
+    row(''),
+    ...lines.map(row),
+    row(''),
+    border(`╰${'─'.repeat(width - 2)}╯`),
+  ]
+}
 
 /** How many entries each list shows before `+N more`. */
 const LIMIT = { items: 2, tickets: 2, links: 5, decide: 5, followUp: 3, surprises: 2 } as const

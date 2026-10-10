@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import { StatusOverlayModel, overlayLines, keyName } from '../overlay'
+import { StatusOverlayModel, overlayLines, keyName, sidebarWidth, resizeSidebarWidth } from '../overlay'
 import { StatusStore } from '../state'
 import { runStatusCall } from '../tool'
 import { plain } from '../view'
@@ -9,10 +9,25 @@ const effects = { ping: () => undefined, linked: () => undefined, ticketReported
 
 test.each([
   ['<', '<'], ['>', '>'],
-  ['\u001b[1;2D', '<'], ['\u001b[1;2C', '>'], // xterm modified arrows
-  ['\u001b[d', '<'], ['\u001b[c', '>'], // rxvt modified arrows
+  ['\u001b[1;2D', '>'], ['\u001b[1;2C', '<'], // xterm: arrows move the left edge
+  ['\u001b[d', '>'], ['\u001b[c', '<'], // rxvt modified arrows
 ])('resize key %j maps to %s', (input, direction) => {
   expect(keyName(input)).toBe(direction)
+})
+
+test('default sidebar width is 64 columns and explicit widths remain supported', () => {
+  expect(sidebarWidth(undefined)).toBe(64)
+  expect(sidebarWidth(52)).toBe(52)
+  expect(resizeSidebarWidth(undefined, 100, 1)).toBe(68)
+  expect(resizeSidebarWidth(undefined, 100, -1)).toBe(60)
+})
+
+test('resizing starts from the visible width in narrow terminals and respects bounds', () => {
+  expect(resizeSidebarWidth(undefined, 40, -1)).toBe(36)
+  expect(resizeSidebarWidth(undefined, 40, 1)).toBe(40)
+  expect(resizeSidebarWidth(80, 40, -1)).toBe(36)
+  expect(resizeSidebarWidth(12, 100, -1)).toBe(12)
+  expect(resizeSidebarWidth(undefined, 8, -1)).toBe(8)
 })
 
 test('unmodified left and right arrows are not resize keys', () => {
@@ -31,6 +46,31 @@ test('narrow sidebar wraps long entries and scrolls selection within terminal he
     expect(lines.every(line => visibleWidth(line) <= width)).toBe(true)
     expect(lines.some(line => line.includes('▶ D20'))).toBe(true)
   }
+})
+
+test('the current tool stays on one line so long commands do not crowd sections', () => {
+  const store = new StatusStore('s', null, () => undefined)
+  const model = new StatusOverlayModel(() => store.get(), () => undefined, () => ({ now: { tool: 'bash', text: 'very long command '.repeat(30) } }))
+  const lines = overlayLines(model, plain, 24)
+  const now = lines.findIndex(line => line.includes('Now'))
+  const session = lines.findIndex(line => line.includes('Session'))
+  expect(session - now).toBe(3)
+  expect(lines[now + 1]).toContain('bash:')
+  expect(lines.every(line => visibleWidth(line) <= 24)).toBe(true)
+})
+
+test('the a key expands and collapses overflow lists without changing status', () => {
+  const store = new StatusStore('s', null, () => undefined)
+  for (let n = 0; n < 5; n++) runStatusCall(store, { action: 'item', state: 'added', title: `Work ${n}` }, n, effects)
+  const before = store.get()
+  const model = new StatusOverlayModel(() => store.get(), () => undefined)
+  expect(keyName('a')).toBe('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).not.toContain('I5 Work 4')
+  model.press('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).toContain('I5 Work 4')
+  model.press('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).not.toContain('I5 Work 4')
+  expect(store.get()).toEqual(before)
 })
 
 test('choice returns to list without completing the panel', () => {

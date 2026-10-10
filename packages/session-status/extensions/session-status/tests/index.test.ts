@@ -1,7 +1,7 @@
 // The extension's wiring, driven through a fake Pi: the handlers it
 // registers, the entries it appends and the prompts it sends.
 
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { type TUI, TuiMainScreen } from '@earendil-works/pi-tui'
 
 import sessionStatus, { INSTRUCTIONS_TEXT } from '../index'
@@ -17,6 +17,7 @@ function fakePi(sessionId = 'abcdef12', branch: unknown[] = [], realTui?: TUI) {
   const sent: { text: string; options?: unknown }[] = []
   const widgets = new Map<string, unknown>()
   const statuses = new Map<string, string | undefined>()
+  const notifications: { text: string; level: string }[] = []
   const pi = {
     on: (name: string, handler: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
     registerTool: (tool: any) => tools.set(tool.name, tool),
@@ -60,7 +61,7 @@ function fakePi(sessionId = 'abcdef12', branch: unknown[] = [], realTui?: TUI) {
         widgets.set(key, value)
       },
       setStatus: (key: string, value: string | undefined) => statuses.set(key, value),
-      notify: () => undefined,
+      notify: (text: string, level: string) => notifications.push({ text, level }),
       custom: () => { throw new Error('The sidebar must not use custom UI') },
     },
   }
@@ -72,7 +73,7 @@ function fakePi(sessionId = 'abcdef12', branch: unknown[] = [], realTui?: TUI) {
   }
   const call = (params: Record<string, unknown>) => tools.get('status').execute('id', params, undefined, undefined, ctx)
 
-  return { emit, call, tools, commands, entries, sent, widgets, statuses, ctx, overlays, renderCount: () => renders, setIdle: (value: boolean) => (idle = value) }
+  return { emit, call, tools, commands, entries, sent, widgets, statuses, notifications, ctx, overlays, renderCount: () => renders, setIdle: (value: boolean) => (idle = value) }
 }
 
 test('the status tool takes the mod JSON Schema', () => {
@@ -103,6 +104,12 @@ test('a tool call saves the status as a custom entry and draws the widget and ba
   expect(entries.at(-1)?.customType).toBe(ENTRY_TYPE)
   expect(typeof widgets.get('session-status')).toBe('function')
   expect(statuses.get('session-status')).toBe('0 blocked · 0 decide · 1 surprise')
+  const factory = widgets.get('session-status') as any
+  const component = factory({}, { fg: (_tone: string, text: string) => text, bold: (text: string) => text })
+  const rendered = component.render(64)
+  expect(rendered[0]).toContain('╭─ Session status ')
+  expect(rendered.at(-1)).toContain('╰')
+  expect(rendered.join('\n')).toContain('S1 x')
 })
 
 test('a refused call throws, so Pi marks the result as an error', async () => {
@@ -168,25 +175,25 @@ test('sidebar retains interaction across focus, visibility, resize and answers',
   const command = (arg: string) => f.commands.get('session-status').handler(arg, f.ctx)
   await f.emit('session_start')
   await f.call({ action: 'record_decision', question: 'Ship?', options: ['Yes', 'No'], default: 'Yes', unblocks: 'Answer', urgency: 'blocked' })
-  await command('on')
+  await command('sidebar show')
   const panel = f.overlays[0]
   const retainedOptions = panel.options
-  expect(retainedOptions).toMatchObject({ anchor: 'top-right', maxHeight: '100%', nonCapturing: true, width: '36%' })
+  expect(retainedOptions).toMatchObject({ anchor: 'top-right', maxHeight: '100%', nonCapturing: true, width: 64 })
   expect(panel.handle.isFocused()).toBe(false)
   expect(f.widgets.get('session-status')).toBeUndefined()
-  await command('focus')
+  await command('sidebar focus')
   expect(panel.handle.isFocused()).toBe(true)
   panel.component.handleInput('>')
-  expect(panel.options.width).toBe(40)
-  panel.component.handleInput('\u001b[1;2D') // Shift+Left
-  expect(panel.options.width).toBe(36)
-  panel.component.handleInput('\u001b[1;2C') // Shift+Right
-  expect(panel.options.width).toBe(40)
-  await command('width 52')
+  expect(panel.options.width).toBe(68)
+  panel.component.handleInput('\u001b[1;2D') // Shift+Left moves the left edge outward
+  expect(panel.options.width).toBe(72)
+  panel.component.handleInput('\u001b[1;2C') // Shift+Right moves the left edge inward
+  expect(panel.options.width).toBe(68)
+  await command('sidebar width 52')
   expect(retainedOptions.width).toBe(52)
-  await command('focus')
+  await command('sidebar focus')
   expect(panel.handle.isFocused()).toBe(false)
-  await command('focus')
+  await command('sidebar focus')
   panel.component.handleInput('\t')
   expect(panel.handle.isFocused()).toBe(false)
   panel.component.handleInput('\r')
@@ -197,7 +204,7 @@ test('sidebar retains interaction across focus, visibility, resize and answers',
   const before = f.renderCount()
   await f.call({ action: 'record_surprise', occurred: 'Updated live', changed: 'Changed' })
   expect(f.renderCount()).toBeGreaterThan(before)
-  await command('off')
+  await command('sidebar hide')
   expect(panel.handle.isHidden()).toBe(true)
   expect(typeof f.widgets.get('session-status')).toBe('function')
   await command('')
@@ -209,7 +216,7 @@ test('sidebar retains interaction across focus, visibility, resize and answers',
   await f.emit('session_tree')
   expect(panel.completed).toBe(true)
   expect(f.widgets.get('session-status-sidebar-host')).toBeUndefined()
-  await command('on')
+  await command('sidebar show')
   await Promise.resolve()
   expect(f.overlays[1].completed).toBe(false)
   await f.emit('session_shutdown')
@@ -222,21 +229,100 @@ test('owned sidebar cleanup preserves another overlay in the real TUI stack', as
   // Test overlay ownership without starting terminal rendering or timers.
   tui.requestRender = () => undefined
   const f = fakePi('s', [], tui)
-  await f.commands.get('session-status').handler('on', f.ctx)
+  await f.commands.get('session-status').handler('sidebar show', f.ctx)
   const other = tui.showOverlay({ render: () => ['another overlay'], invalidate: () => undefined })
   expect(other.isFocused()).toBe(true)
   await f.emit('session_tree')
   expect(other.isFocused()).toBe(true)
-  await f.commands.get('session-status').handler('on', f.ctx)
+  await f.commands.get('session-status').handler('sidebar show', f.ctx)
   await f.emit('session_shutdown')
   expect(other.isFocused()).toBe(true)
   other.hide()
   expect(tui.hasOverlay()).toBe(false)
 })
 
+test('sidebar refreshes ages while visible and clears its timer on shutdown', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakePi()
+    const command = (arg: string) => f.commands.get('session-status').handler(arg, f.ctx)
+    await command('sidebar show')
+    const before = f.renderCount()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(f.renderCount()).toBeGreaterThan(before)
+    await command('sidebar hide')
+    const hidden = f.renderCount()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(f.renderCount()).toBe(hidden)
+    await f.emit('session_shutdown')
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('sidebar begins with state and exposes session metadata and current tool', async () => {
+  const f = fakePi()
+  Object.assign(f.ctx, { cwd: '/projects/example/worktree' })
+  await f.emit('session_start')
+  await f.call({ action: 'item', state: 'added', title: 'Build feature' })
+  await f.emit('tool_execution_start', { toolName: 'bash', args: { description: 'Run tests' } })
+  await f.commands.get('session-status').handler('sidebar show', f.ctx)
+  const rendered = f.overlays[0].component.render(64).join('\n')
+  expect(rendered).toContain('Now')
+  expect(rendered).toContain('bash: Run tests')
+  expect(rendered).toContain('abcdef12')
+  expect(rendered).toContain('example/worktree')
+  expect(rendered).not.toContain('Session status')
+  expect(rendered).not.toContain('Open entries')
+  expect(rendered).not.toContain('Nothing is open')
+  await f.emit('session_shutdown')
+})
+
+test('explicit widget commands do not toggle the sidebar and reset clears status', async () => {
+  const f = fakePi()
+  const command = (arg: string) => f.commands.get('session-status').handler(arg, f.ctx)
+  await f.emit('session_start')
+  await f.call({ action: 'item', state: 'added', title: 'Work' })
+  await command('widget hide')
+  expect(f.widgets.get('session-status')).toBeUndefined()
+  expect(f.overlays).toHaveLength(0)
+  await command('widget show')
+  expect(typeof f.widgets.get('session-status')).toBe('function')
+  await command('')
+  expect(f.overlays[0].handle.isHidden()).toBe(false)
+  await command('widget hide')
+  await command('widget show')
+  expect(f.widgets.get('session-status')).toBeUndefined()
+  expect(f.overlays[0].handle.isHidden()).toBe(false)
+  await command('')
+  expect(f.overlays[0].handle.isHidden()).toBe(true)
+  expect(typeof f.widgets.get('session-status')).toBe('function')
+  await command('reset')
+  expect((await f.call({ action: 'list' })).content[0].text).not.toContain('I1 Work')
+})
+
+test('command completions expose explicit sidebar and widget actions only', () => {
+  const command = fakePi().commands.get('session-status')
+  expect(command.getArgumentCompletions('').map((entry: any) => entry.value)).toEqual([
+    'sidebar show', 'sidebar hide', 'sidebar focus', 'sidebar width ', 'widget show', 'widget hide', 'reset',
+  ])
+  expect(command.getArgumentCompletions('widget ').map((entry: any) => entry.value)).toEqual(['widget show', 'widget hide'])
+})
+
+test.each(['on', 'off', 'focus', 'width 64', 'hide', 'show', 'sidebar width 11', 'widget reset'])(
+  'ambiguous or invalid command %s warns without opening the sidebar', async arg => {
+    const f = fakePi()
+    await f.commands.get('session-status').handler(arg, f.ctx)
+    expect(f.overlays).toHaveLength(0)
+    expect(f.notifications.at(-1)).toMatchObject({ level: 'warning' })
+    expect(f.notifications.at(-1)?.text).toContain('sidebar show')
+  },
+)
+
 test('non-tui mode never starts a custom sidebar', async () => {
   const f = fakePi()
   f.ctx.mode = 'rpc'
-  await f.commands.get('session-status').handler('on', f.ctx)
+  await f.commands.get('session-status').handler('sidebar show', f.ctx)
   expect(f.overlays).toHaveLength(0)
 })

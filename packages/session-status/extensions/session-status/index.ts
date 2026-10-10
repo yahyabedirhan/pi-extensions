@@ -3,7 +3,7 @@
 // beside it. Keep feature logic in those modules; keep only I/O here.
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { type OverlayHandle, hyperlink, truncateToWidth } from '@earendil-works/pi-tui'
+import { type OverlayHandle, hyperlink } from '@earendil-works/pi-tui'
 import { Type } from 'typebox'
 
 import { afterTurn, settlesByPrompt } from './core/hooks/activity'
@@ -14,11 +14,12 @@ import { toolResultChange } from './core/hooks/tool-results'
 import { GitHubReads } from './github'
 import { MIN_SIDEBAR_WIDTH, StatusOverlayModel, keyName, overlayLines, resizeSidebarWidth, sidebarWidth } from './overlay'
 import { applyChoice } from './replies'
+import type { SidebarMetadata } from './sidebar'
 import { ENTRY_TYPE, StatusStore, restoreStatus } from './state'
 import type { EntryLike } from './state'
 import { TOOL_DESCRIPTION, TOOL_NAME, forPi, reset, runStatusCall } from './tool'
 import type { StatusEffects } from './tool'
-import { OVERLAY_HINT, bandText, widgetLines } from './view'
+import { OVERLAY_HINT, bandText, widgetFrame, widgetLines } from './view'
 import type { Paint } from './view'
 
 const COMMAND = 'session-status'
@@ -40,13 +41,15 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   let ui: ExtensionContext['ui'] | null = null
   let hasUi = false
   let isWidgetHidden = false
-  type Panel = { handle?: OverlayHandle; owner: ExtensionContext['ui']; render?: () => void; visible: boolean; focus: boolean }
+  type Panel = { handle?: OverlayHandle; owner: ExtensionContext['ui']; render?: () => void; ageTimer?: ReturnType<typeof setInterval>; visible: boolean; focus: boolean }
   let panel: Panel | null = null
   let panelWidth: number | undefined
+  let sidebarMetadata: SidebarMetadata = {}
 
   function closePanel(): void {
     const previous = panel
     panel = null
+    if (previous?.ageTimer !== undefined) clearInterval(previous.ageTimer)
     previous?.handle?.hide()
     previous?.owner.setWidget('session-status-sidebar-host', undefined)
     draw()
@@ -88,6 +91,16 @@ export default function sessionStatus(pi: ExtensionAPI): void {
     const next = new StatusStore(sessionId, restored, status => pi.appendEntry(ENTRY_TYPE, status))
     next.onChange(() => draw())
     store = next
+    sidebarMetadata = typeof ctx.cwd === 'string' ? { cwd: ctx.cwd } : {}
+    if (sidebarMetadata.cwd !== undefined) {
+      // Location is presentation metadata, not a mutation of the shared status contract.
+      void pi.exec('git', ['-C', sidebarMetadata.cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { timeout: 5_000 })
+        .then(result => {
+          if (store !== next || result.code !== 0) return
+          sidebarMetadata = { ...sidebarMetadata, branch: result.stdout.trim() || undefined }
+          draw()
+        }).catch(() => undefined)
+    }
     // A restored turn is over: a status saved mid-turn reads as waiting, or settled.
     if (restored?.activity === 'working' || restored?.activity === 'settling') {
       next.change(status => ({ ...status, activity: afterTurn(status.activity, false) }), { save: false })
@@ -120,7 +133,10 @@ export default function sessionStatus(pi: ExtensionAPI): void {
       return
     }
     ui.setWidget(WIDGET_KEY, (_tui, theme) => ({
-      render: (width: number) => widgetLines(current.get(), paintFor(theme)).map(line => truncateToWidth(line, width)),
+      render: (width: number) => {
+        const paint = paintFor(theme)
+        return widgetFrame(widgetLines(current.get(), paint), width, paint)
+      },
       invalidate: () => undefined,
     }))
   }
@@ -153,7 +169,13 @@ export default function sessionStatus(pi: ExtensionAPI): void {
     const instance: Panel = { visible: true, focus, owner: ctx.ui }
     panel = instance
     ctx.ui.setWidget('session-status-sidebar-host', (tui, theme) => {
-      const host = { render: () => [] as string[], invalidate: () => undefined, dispose: () => { instance.handle?.hide() } }
+      const host = {
+        render: () => [] as string[], invalidate: () => undefined,
+        dispose: () => {
+          if (instance.ageTimer !== undefined) clearInterval(instance.ageTimer)
+          instance.handle?.hide()
+        },
+      }
       if (panel !== instance || instance.handle !== undefined) return host
       instance.render = () => tui.requestRender()
       const release = () => instance.handle?.unfocus()
@@ -162,9 +184,9 @@ export default function sessionStatus(pi: ExtensionAPI): void {
         if (choice === undefined) { release(); return }
         const prompt = applyChoice(current, choice, Date.now(), effects)
         if (prompt !== null) send(prompt, ctx)
-      })
+      }, () => sidebarMetadata)
       const component = {
-        render: (width: number) => overlayLines(model, paintFor(theme), width, tui.terminal.rows),
+        render: (width: number) => overlayLines(model, paintFor(theme), width, tui.terminal.rows, instance.handle?.isFocused()),
         handleInput: (data: string) => {
           const key = keyName(data)
           if (key === 'tab' || key === 'focus') release()
@@ -176,9 +198,13 @@ export default function sessionStatus(pi: ExtensionAPI): void {
         invalidate: () => undefined,
       }
       instance.handle = tui.showOverlay(component, {
-        get width(): number | '36%' { return sidebarWidth(panelWidth) },
+        get width(): number { return sidebarWidth(panelWidth) },
         minWidth: MIN_SIDEBAR_WIDTH, maxHeight: '100%', anchor: 'top-right', margin: 0, nonCapturing: true,
       })
+      instance.ageTimer = setInterval(() => {
+        if (panel === instance && instance.visible) tui.requestRender()
+      }, 15_000)
+      instance.ageTimer.unref()
       instance.handle.setHidden(!instance.visible)
       if (instance.focus) instance.handle.focus()
       return host
@@ -204,31 +230,31 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   })
 
   pi.registerCommand(COMMAND, {
-    description: 'Toggle the sidebar; on, off, focus, width N; hide/show the widget; reset status',
+    description: 'Toggle the sidebar; sidebar show/hide/focus/width N; widget show/hide; reset status',
     getArgumentCompletions: prefix =>
-      ['on', 'off', 'focus', 'width ', 'hide', 'show', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
+      ['sidebar show', 'sidebar hide', 'sidebar focus', 'sidebar width ', 'widget show', 'widget hide', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase()
       const current = holdSession(ctx)
       if (arg === 'reset') {
         ctx.ui.notify(reset(current), 'info')
-      } else if (arg === 'hide' || arg === 'show') {
-        isWidgetHidden = arg === 'hide'
+      } else if (arg === 'widget hide' || arg === 'widget show') {
+        isWidgetHidden = arg === 'widget hide'
         draw()
-      } else if (arg === 'off' || (arg === '' && panel?.visible)) {
+      } else if (arg === 'sidebar hide' || (arg === '' && panel?.visible)) {
         if (panel !== null) {
           panel.visible = false
           panel.handle?.unfocus()
           panel.handle?.setHidden(true)
           draw()
         }
-      } else if (arg === '' || arg === 'on' || arg === 'focus') {
-        showPanel(ctx, arg === 'focus')
-      } else if (/^width [1-9]\d*$/.test(arg) && Number(arg.slice(6)) >= MIN_SIDEBAR_WIDTH) {
-        panelWidth = Number(arg.slice(6))
+      } else if (arg === '' || arg === 'sidebar show' || arg === 'sidebar focus') {
+        showPanel(ctx, arg === 'sidebar focus')
+      } else if (/^sidebar width [1-9]\d*$/.test(arg) && Number(arg.slice(14)) >= MIN_SIDEBAR_WIDTH) {
+        panelWidth = Number(arg.slice(14))
         panel?.render?.()
       } else {
-        ctx.ui.notify(`Use /${COMMAND} [on|off|focus|width N|hide|show|reset]; width must be at least 12 columns.`, 'warning')
+        ctx.ui.notify(`Use /${COMMAND} [sidebar show|sidebar hide|sidebar focus|sidebar width N|widget show|widget hide|reset]; width must be at least 12 columns.`, 'warning')
       }
     },
   })
@@ -274,6 +300,14 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   pi.on('agent_end', (event, ctx) => {
     const last = event.messages.at(-1) as { stopReason?: string } | undefined
     holdSession(ctx).change(status => ({ ...status, activity: afterTurn(status.activity, last?.stopReason === 'aborted') }))
+  })
+
+  pi.on('tool_execution_start', (event, ctx) => {
+    holdSession(ctx)
+    const args = event.args ?? {}
+    const text = String(args.description ?? args.path ?? args.command ?? event.toolName).replace(/\s+/g, ' ').slice(0, 160)
+    sidebarMetadata = { ...sidebarMetadata, now: { tool: event.toolName, text } }
+    panel?.render?.()
   })
 
   pi.on('tool_result', (event, ctx) => {

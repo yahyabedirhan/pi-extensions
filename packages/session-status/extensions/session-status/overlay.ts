@@ -7,7 +7,8 @@ import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@ea
 import type { SessionStatus } from './core/types'
 import { choicesFor, openEntries } from './replies'
 import type { Choice, Entry, LabeledChoice } from './replies'
-import { widgetLines } from './view'
+import { sidebarRows } from './sidebar'
+import type { SidebarMetadata } from './sidebar'
 import type { Paint } from './view'
 
 /** One line that names an entry: its id, its text and its kind's heading. */
@@ -39,15 +40,16 @@ function entryDetail(entry: Entry): string[] {
 
 /** Sidebar sizing policy, independent of Pi's overlay lifecycle. */
 export const MIN_SIDEBAR_WIDTH = 12
-const DEFAULT_SIDEBAR_RATIO = 0.36
+const DEFAULT_SIDEBAR_WIDTH = 64
 const SIDEBAR_RESIZE_STEP = 4
 
-export function sidebarWidth(width: number | undefined): number | '36%' {
-  return width ?? '36%'
+export function sidebarWidth(width: number | undefined): number {
+  return width ?? DEFAULT_SIDEBAR_WIDTH
 }
 
 export function resizeSidebarWidth(width: number | undefined, columns: number, direction: -1 | 1): number {
-  return Math.max(MIN_SIDEBAR_WIDTH, Math.min(columns, (width ?? Math.round(columns * DEFAULT_SIDEBAR_RATIO)) + direction * SIDEBAR_RESIZE_STEP))
+  const current = Math.min(columns, sidebarWidth(width))
+  return Math.min(columns, Math.max(MIN_SIDEBAR_WIDTH, current + direction * SIDEBAR_RESIZE_STEP))
 }
 
 /** The sidebar's selection and viewport state, driven by named keys. */
@@ -58,10 +60,12 @@ export class StatusOverlayModel {
   private scroll: number | null = null
   private viewportStart = 0
   private viewportSize = 1
+  private followSelection = false
+  private expandedLists = false
 
   viewport(total: number, capacity: number, selectedRow: number): number {
     this.viewportSize = Math.max(capacity, 1)
-    const automatic = Math.max(selectedRow - 1, 0)
+    const automatic = this.followSelection ? Math.max(selectedRow - 1, 0) : 0
     this.viewportStart = Math.max(0, Math.min(this.scroll ?? automatic, Math.max(total - capacity, 0)))
     return this.viewportStart
   }
@@ -69,10 +73,11 @@ export class StatusOverlayModel {
   constructor(
     private readonly read: () => SessionStatus,
     private readonly done: (choice: Choice | undefined) => void,
+    private readonly metadata: () => SidebarMetadata = () => ({}),
   ) {}
 
-  summary(paint: Paint): string[] {
-    return widgetLines(this.read(), paint)
+  summary(paint: Paint) {
+    return sidebarRows(this.read(), paint, { ...this.metadata(), expandedLists: this.expandedLists })
   }
 
   entries(): Entry[] {
@@ -100,11 +105,18 @@ export class StatusOverlayModel {
   /** Handles one key by name: `up`, `down`, `enter`, `escape` or a digit. */
   press(key: string): void {
     this.current()
+    if (key === 'expand') {
+      this.expandedLists = !this.expandedLists
+      this.followSelection = false
+      this.scroll = null
+      return
+    }
     if (key === 'pageup' || key === 'pagedown') {
       this.scroll = Math.max(0, this.viewportStart + (key === 'pageup' ? -1 : 1) * Math.max(this.viewportSize - 1, 1))
       return
     }
     this.scroll = null
+    if (key === 'up' || key === 'down' || key === 'enter' || /^[1-9]$/.test(key)) this.followSelection = true
     const size = this.openEntry === null ? this.entries().length : this.choices().length
     const index = this.selection()
     if (key === 'escape') {
@@ -150,6 +162,7 @@ export class StatusOverlayModel {
       this.openEntry = null
       this.selected = 0
       this.choiceIndex = 0
+      this.followSelection = false
       this.done(choice.choice)
     }
   }
@@ -164,36 +177,33 @@ export function keyName(data: string): string | null {
   if (matchesKey(data, 'pageUp')) return 'pageup'
   if (matchesKey(data, 'pageDown')) return 'pagedown'
   if (matchesKey(data, 'tab')) return 'tab'
+  if (data === 'a') return 'expand'
   if (matchesKey(data, 'alt+s')) return 'focus'
-  if (matchesKey(data, 'shift+left') || data === '<') return '<'
-  if (matchesKey(data, 'shift+right') || data === '>') return '>'
+  // Shifted arrows move the right sidebar's left edge; punctuation changes its width.
+  if (matchesKey(data, 'shift+right') || data === '<') return '<'
+  if (matchesKey(data, 'shift+left') || data === '>') return '>'
   if (/^[1-9]$/.test(data)) return data
 
   return null
 }
 
 /** The overlay's lines for a width, framed. */
-export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number): string[] {
+export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number, focused = false): string[] {
   const inner = Math.max(width - 4, 1)
   const body: string[] = []
+  const truncateRows = new Set<number>()
   let selectedLine = -1
   const entry = model.current()
   if (entry === null) {
     const entries = model.entries()
-    body.push(paint.bold('Session status'), ...model.summary(paint), '', paint.bold('Open entries'))
-    if (entries.length === 0) {
-      body.push(paint.fg('dim', 'Nothing is open.'))
+    const selectedId = entries[model.selection()]?.id
+    for (const row of model.summary(paint)) {
+      const selected = row.entryId !== undefined && row.entryId === selectedId
+      if (selected) selectedLine = body.length
+      if (row.truncate) truncateRows.add(body.length)
+      body.push(selected ? paint.fg('accent', `▶ ${row.text.trimStart()}`) : row.text)
     }
-    entries.forEach((candidate, index) => {
-      const isSelected = index === model.selection()
-      const line = `${isSelected ? '▶' : ' '} ${entryLine(candidate)}`
-      if (isSelected) selectedLine = body.length
-      body.push(isSelected ? paint.fg('accent', line) : line)
-      if (isSelected) {
-        body.push(...entryDetail(candidate).map(detail => paint.fg('dim', `    ${detail}`)))
-      }
-    })
-    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · Shift+←/→ or < > resize'))
+    if (focused) body.push('', paint.fg('dim', '↑↓ move · Enter answer · a more/less · Tab/Esc editor · Shift+←/→ resize'))
   } else {
     body.push(paint.bold(entryLine(entry)), ...entryDetail(entry).map(detail => paint.fg('dim', detail)), '')
     model.choices().forEach((choice, index) => {
@@ -214,7 +224,7 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
   const wrapped: string[] = []
   body.forEach((line, index) => {
     if (index === selectedLine) selectedRow = wrapped.length
-    wrapped.push(...wrapTextWithAnsi(line, inner))
+    wrapped.push(...(truncateRows.has(index) ? [truncateToWidth(line, inner)] : wrapTextWithAnsi(line, inner)))
   })
   const capacity = height === undefined ? wrapped.length : Math.max(height - 2, 0)
   const start = model.viewport(wrapped.length, capacity, selectedRow)

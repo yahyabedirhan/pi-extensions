@@ -3,7 +3,7 @@
 // buttons (register.tsx answerDecision, discussItem, closeSurprise).
 
 import type { Blocker, Decision, SessionStatus, StatusItem, Surprise } from './core/types'
-import { isOpen, markDiscussing } from './core/hooks/status'
+import { isOpen, markDiscussing, onEndList, openFollowUps, openToDecide } from './core/hooks/status'
 import type { StatusStore } from './state'
 import { closeStatusItem } from './tool'
 import type { StatusEffects } from './tool'
@@ -27,19 +27,25 @@ const ACTION_MAX = 30
 
 /**
  * The open entries the overlay lists: blocked decisions, blockers,
- * decisions before settling, follow-ups after settling, then surprises.
+ * decisions before settling, follow-ups after settling, surprises, then observations.
+ * Navigation follows the sidebar's visual order, including newest-first groups.
  */
 export function openEntries(status: SessionStatus): Entry[] {
   const open = status.items.filter(isOpen)
   const decisions = (urgency: Decision['urgency']) =>
     open.filter((item): item is Decision => item.kind === 'decision' && item.urgency === urgency)
 
+  const asked = new Set(onEndList(status).map(item => item.id))
+  const beforeSettling = openToDecide(status)
+  const surprises = open.filter((item): item is Surprise => item.kind === 'surprise').reverse()
   return [
     ...decisions('blocked'),
     ...open.filter((item): item is Blocker => item.kind === 'blocker'),
-    ...decisions('before_settling'),
-    ...decisions('after_settling'),
-    ...open.filter((item): item is Surprise => item.kind === 'surprise'),
+    ...beforeSettling.filter(item => asked.has(item.id)),
+    ...beforeSettling.filter(item => !asked.has(item.id)).reverse(),
+    ...openFollowUps(status).reverse(),
+    ...surprises.filter(item => item.source !== 'observer'),
+    ...surprises.filter(item => item.source === 'observer'),
   ]
 }
 
