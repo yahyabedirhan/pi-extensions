@@ -20,7 +20,9 @@ pi install ./packages/session-status
 pi install ./packages/subagent-guard
 ```
 
-Local packages load from the clone without copying. Keep the clone in place; use `git pull` to update it. Pi resolves relative package paths from the settings file that records them. To try either package for one run without changing settings:
+Local packages load from the clone without copying. Keep the clone in place; use Git to update it to an approved commit or release tag. `pi update --extensions` does not pull local clones. Pi resolves relative package paths from the settings file that records them. For automated machine setup, use a stable clone location and pass each package's absolute directory path to `pi install`.
+
+To try either package for one run without changing settings:
 
 ```sh
 pi -e ./packages/session-status
@@ -28,6 +30,10 @@ pi -e ./packages/subagent-guard
 ```
 
 The root is development tooling, **not a Pi package**. Do not install the root Git URL: Pi's Git source selects a repository, not a workspace subdirectory. Resource filters on a root bundle are not independent package installs.
+
+### Migrate an existing bundle installation
+
+Run `pi list` to find the old root-repository declaration. Install the desired package directories, then remove the exact old declaration with `pi remove <old-source>` to avoid loading both versions. Do not remove unrelated packages. In an existing interactive session, run `/reload` after changing installations; Session Status's `/session-status on` opens the sidebar.
 
 No npm packages are published by this change. The workspace names `pi-session-status-local` and `pi-subagent-guard-local`, version `0.0.0`, are private placeholders, not approved registry identities. Registry names, release versions and publication require a separate decision.
 

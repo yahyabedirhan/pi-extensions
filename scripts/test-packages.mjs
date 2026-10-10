@@ -8,11 +8,14 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const scratch = join(root, '.scratch')
 mkdirSync(scratch, { recursive: true })
-const temporary = mkdtempSync(join(tmpdir(), 'pi-package-test-'))
 const expectedPeers = {
   'session-status': ['@earendil-works/pi-coding-agent', '@earendil-works/pi-tui', 'typebox'],
   'subagent-guard': ['@earendil-works/pi-coding-agent'],
 }
+const packageDirectories = readdirSync(join(root, 'packages'), { withFileTypes: true })
+  .filter(entry => entry.isDirectory())
+  .map(entry => entry.name)
+assert.deepEqual(packageDirectories.sort(), Object.keys(expectedPeers).sort(), 'Every package needs an artifact smoke contract')
 const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 assert.equal(rootManifest.private, true)
 assert.equal(rootManifest.pi, undefined, 'The development root must not declare a bundle')
@@ -21,6 +24,7 @@ for (const conventional of ['extensions', 'skills', 'prompts', 'themes']) {
   assert(!readdirSync(root).includes(conventional) || readdirSync(join(root, conventional)).length === 0)
 }
 
+const temporary = mkdtempSync(join(tmpdir(), 'pi-package-test-'))
 try {
   for (const [name, peers] of Object.entries(expectedPeers)) {
     const isolation = join(temporary, name)
