@@ -3,7 +3,7 @@
 // beside it. Keep feature logic in those modules; keep only I/O here.
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { hyperlink, truncateToWidth } from '@earendil-works/pi-tui'
+import { type OverlayHandle, hyperlink, truncateToWidth } from '@earendil-works/pi-tui'
 import { Type } from 'typebox'
 
 import { afterTurn, settlesByPrompt } from './core/hooks/activity'
@@ -12,9 +12,8 @@ import { INSTRUCTIONS } from './core/hooks/instructions'
 import { STATUS_TOOL_SPEC } from './core/hooks/status-tool'
 import { toolResultChange } from './core/hooks/tool-results'
 import { GitHubReads } from './github'
-import { StatusOverlayModel, keyName, overlayLines } from './overlay'
+import { MIN_SIDEBAR_WIDTH, StatusOverlayModel, keyName, overlayLines, resizeSidebarWidth, sidebarWidth } from './overlay'
 import { applyChoice } from './replies'
-import type { Choice } from './replies'
 import { ENTRY_TYPE, StatusStore, restoreStatus } from './state'
 import type { EntryLike } from './state'
 import { TOOL_DESCRIPTION, TOOL_NAME, forPi, reset, runStatusCall } from './tool'
@@ -30,7 +29,7 @@ const SHORTCUT = OVERLAY_HINT
 
 /** The mod's instructions with Pi's names, plus where the answers come from in Pi. */
 export const INSTRUCTIONS_TEXT = `${forPi(INSTRUCTIONS.text)}
-- In Pi, the status shows in a widget above the editor, and the user answers in an overlay (${SHORTCUT} or \`/${COMMAND}\`). Its answers arrive as the same prompts as the pane's buttons.`
+- In Pi, the status shows in a persistent right sidebar when enabled, or a widget above the editor. Use ${SHORTCUT} to focus the sidebar and \`/${COMMAND}\` to toggle it. Answers arrive as the same prompts as the pane's buttons.`
 
 /** The skills a `read` of their SKILL.md runs: Pi loads a skill by reading its file. */
 const SETTLE_SKILL_FILE = /(?:^|\/)(?:settle-session|settle-effort)\/SKILL\.md$/
@@ -41,7 +40,17 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   let ui: ExtensionContext['ui'] | null = null
   let hasUi = false
   let isWidgetHidden = false
-  let isOverlayOpen = false
+  type Panel = { handle?: OverlayHandle; owner: ExtensionContext['ui']; render?: () => void; visible: boolean; focus: boolean }
+  let panel: Panel | null = null
+  let panelWidth: number | undefined
+
+  function closePanel(): void {
+    const previous = panel
+    panel = null
+    previous?.handle?.hide()
+    previous?.owner.setWidget('session-status-sidebar-host', undefined)
+    draw()
+  }
 
   const reads = new GitHubReads(
     () => store,
@@ -74,6 +83,7 @@ export default function sessionStatus(pi: ExtensionAPI): void {
     if (store?.sessionId === sessionId) {
       return store
     }
+    closePanel()
     const restored = restoreStatus(ctx.sessionManager.getBranch() as EntryLike[], sessionId)
     const next = new StatusStore(sessionId, restored, status => pi.appendEntry(ENTRY_TYPE, status))
     next.onChange(() => draw())
@@ -103,7 +113,8 @@ export default function sessionStatus(pi: ExtensionAPI): void {
     const current = store
     const hasStatus = current.hasStatus() && widgetLines(current.get()).length > 0
     ui.setStatus(WIDGET_KEY, current.hasStatus() ? bandText(current.get()) : undefined)
-    if (!hasStatus || isWidgetHidden) {
+    panel?.render?.()
+    if (!hasStatus || isWidgetHidden || panel?.visible) {
       ui.setWidget(WIDGET_KEY, undefined)
 
       return
@@ -123,47 +134,56 @@ export default function sessionStatus(pi: ExtensionAPI): void {
     }
   }
 
-  async function openOverlay(ctx: ExtensionContext): Promise<void> {
+  function showPanel(ctx: ExtensionContext, focus = false): void {
     const current = holdSession(ctx)
     if (ctx.mode !== 'tui') {
       ctx.ui.notify(bandText(current.get()), 'info')
-
       return
     }
-    if (isOverlayOpen) {
+    if (panel !== null) {
+      panel.visible = true
+      panel.handle?.setHidden(false)
+      if (focus) {
+        if (panel.handle?.isFocused()) panel.handle.unfocus()
+        else panel.handle?.focus()
+      }
+      draw()
       return
     }
-    isOverlayOpen = true
-    let choice: Choice | undefined
-    try {
-      choice = await ctx.ui.custom<Choice | undefined>(
-        (tui, theme, _keybindings, done) => {
-          const model = new StatusOverlayModel(() => current.get(), done)
-
-          return {
-            render: (width: number) => overlayLines(model, paintFor(theme), width),
-            handleInput: (data: string) => {
-              const key = keyName(data)
-              if (key !== null) {
-                model.press(key)
-                tui.requestRender()
-              }
-            },
-            invalidate: () => undefined,
-          }
+    const instance: Panel = { visible: true, focus, owner: ctx.ui }
+    panel = instance
+    ctx.ui.setWidget('session-status-sidebar-host', (tui, theme) => {
+      const host = { render: () => [] as string[], invalidate: () => undefined, dispose: () => { instance.handle?.hide() } }
+      if (panel !== instance || instance.handle !== undefined) return host
+      instance.render = () => tui.requestRender()
+      const release = () => instance.handle?.unfocus()
+      const model = new StatusOverlayModel(() => current.get(), choice => {
+        if (panel !== instance) return
+        if (choice === undefined) { release(); return }
+        const prompt = applyChoice(current, choice, Date.now(), effects)
+        if (prompt !== null) send(prompt, ctx)
+      })
+      const component = {
+        render: (width: number) => overlayLines(model, paintFor(theme), width, tui.terminal.rows),
+        handleInput: (data: string) => {
+          const key = keyName(data)
+          if (key === 'tab' || key === 'focus') release()
+          else if (key === '<' || key === '>') {
+            panelWidth = resizeSidebarWidth(panelWidth, tui.terminal.columns, key === '<' ? -1 : 1)
+          } else if (key !== null) model.press(key)
+          tui.requestRender()
         },
-        { overlay: true, overlayOptions: { width: '70%', minWidth: 50, maxHeight: '80%', anchor: 'center' } },
-      )
-    } finally {
-      isOverlayOpen = false
-    }
-    if (choice === undefined) {
-      return
-    }
-    const prompt = applyChoice(current, choice, Date.now(), effects)
-    if (prompt !== null) {
-      send(prompt, ctx)
-    }
+        invalidate: () => undefined,
+      }
+      instance.handle = tui.showOverlay(component, {
+        get width(): number | '36%' { return sidebarWidth(panelWidth) },
+        minWidth: MIN_SIDEBAR_WIDTH, maxHeight: '100%', anchor: 'top-right', margin: 0, nonCapturing: true,
+      })
+      instance.handle.setHidden(!instance.visible)
+      if (instance.focus) instance.handle.focus()
+      return host
+    })
+    draw()
   }
 
   pi.registerTool({
@@ -184,9 +204,9 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   })
 
   pi.registerCommand(COMMAND, {
-    description: 'Answer the session status; `hide` or `show` the widget; `reset` clears the whole session status',
+    description: 'Toggle the sidebar; on, off, focus, width N; hide/show the widget; reset status',
     getArgumentCompletions: prefix =>
-      ['hide', 'show', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
+      ['on', 'off', 'focus', 'width ', 'hide', 'show', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase()
       const current = holdSession(ctx)
@@ -195,31 +215,45 @@ export default function sessionStatus(pi: ExtensionAPI): void {
       } else if (arg === 'hide' || arg === 'show') {
         isWidgetHidden = arg === 'hide'
         draw()
-      } else if (arg === '') {
-        await openOverlay(ctx)
+      } else if (arg === 'off' || (arg === '' && panel?.visible)) {
+        if (panel !== null) {
+          panel.visible = false
+          panel.handle?.unfocus()
+          panel.handle?.setHidden(true)
+          draw()
+        }
+      } else if (arg === '' || arg === 'on' || arg === 'focus') {
+        showPanel(ctx, arg === 'focus')
+      } else if (/^width [1-9]\d*$/.test(arg) && Number(arg.slice(6)) >= MIN_SIDEBAR_WIDTH) {
+        panelWidth = Number(arg.slice(6))
+        panel?.render?.()
       } else {
-        ctx.ui.notify(`Unknown argument "${args.trim()}". Use /${COMMAND}, /${COMMAND} hide, show or reset.`, 'warning')
+        ctx.ui.notify(`Use /${COMMAND} [on|off|focus|width N|hide|show|reset]; width must be at least 12 columns.`, 'warning')
       }
     },
   })
 
   pi.registerShortcut(SHORTCUT, {
     description: 'Answer the session status',
-    handler: ctx => openOverlay(ctx),
+    handler: ctx => showPanel(ctx, true),
   })
 
   // A start, a resume, a reload, a new session or a fork: the status follows
   // the session id (see restoreStatus), so a new session or a fork starts empty.
   pi.on('session_start', (_event, ctx) => {
+    closePanel()
     store = null
     holdSession(ctx)
   })
 
   // A move in /tree: the status is the one the new branch saved.
   pi.on('session_tree', (_event, ctx) => {
+    closePanel()
     store = null
     holdSession(ctx)
   })
+
+  pi.on('session_shutdown', () => closePanel())
 
   pi.on('before_agent_start', (event, ctx) => {
     holdSession(ctx)
