@@ -7,14 +7,14 @@ It is a port of the [session-status mod for Claude Code](https://github.com/yahy
 ## Try it and install it
 
 ```sh
-# One run only, nothing installed:
-pi -e git:github.com/yahyabedirhan/pi-extensions@v0.1.0
-# From a clone:
-pi -e ./extensions/session-status/index.ts
+# From the repository root, one run only:
+pi -e ./packages/session-status
 
-# Install for every session:
-pi install git:github.com/yahyabedirhan/pi-extensions@v0.1.0
+# Install this package only:
+pi install ./packages/session-status
 ```
+
+From this package directory, use `pi -e .` or `pi install .` instead. Local installs load from the clone; keep it in place and update it with `git pull`. This package does not load Subagent Guard. Its private npm name is a local placeholder; no registry release is approved.
 
 ## What you see
 

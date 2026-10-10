@@ -7,12 +7,14 @@ A guardrail extension that gates tools through `pi.on("tool_call")` also gates a
 ## Try it and install it
 
 ```sh
-# One run, next to pi-subagents, nothing installed:
-pi -e ./extensions/subagent-guard/index.ts -e npm:@tintinweb/pi-subagents@0.20.0
+# From the repository root, one run next to pi-subagents:
+pi -e ./packages/subagent-guard -e npm:@tintinweb/pi-subagents@0.20.0
 
-# Install for every session:
-pi install git:github.com/yahyabedirhan/pi-extensions@v0.2.0
+# Install this package only:
+pi install ./packages/subagent-guard
 ```
+
+From this package directory, use `pi -e .` or `pi install .` instead. Local installs load from the clone; keep it in place and update it with `git pull`. This package does not load Session Status. Its private npm name is a local placeholder; no registry release is approved.
 
 Load it in the same places as your guardrail, so the children load it too.
 

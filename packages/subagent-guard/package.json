@@ -1,0 +1,31 @@
+{
+  "name": "pi-subagent-guard-local",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Preserve tool-call guardrails in Pi subagents",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yahyabedirhan/pi-packages.git",
+    "directory": "packages/subagent-guard"
+  },
+  "files": [
+    "extensions/**/*.ts",
+    "extensions/**/README.md",
+    "!extensions/**/tests/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/subagent-guard/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
