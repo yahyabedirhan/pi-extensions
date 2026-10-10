@@ -48,6 +48,20 @@ test('narrow sidebar wraps long entries and scrolls selection within terminal he
   }
 })
 
+test('the a key expands and collapses overflow lists without changing status', () => {
+  const store = new StatusStore('s', null, () => undefined)
+  for (let n = 0; n < 5; n++) runStatusCall(store, { action: 'item', state: 'added', title: `Work ${n}` }, n, effects)
+  const before = store.get()
+  const model = new StatusOverlayModel(() => store.get(), () => undefined)
+  expect(keyName('a')).toBe('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).not.toContain('I5 Work 4')
+  model.press('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).toContain('I5 Work 4')
+  model.press('expand')
+  expect(model.summary(plain).map(row => row.text).join('\n')).not.toContain('I5 Work 4')
+  expect(store.get()).toEqual(before)
+})
+
 test('choice returns to list without completing the panel', () => {
   const store = new StatusStore('s', null, () => undefined)
   runStatusCall(store, { action: 'record_surprise', occurred: 'Long text', changed: 'Something changed' }, 1, effects)

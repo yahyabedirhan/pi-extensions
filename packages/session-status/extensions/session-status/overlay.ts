@@ -61,6 +61,7 @@ export class StatusOverlayModel {
   private viewportStart = 0
   private viewportSize = 1
   private followSelection = false
+  private expandedLists = false
 
   viewport(total: number, capacity: number, selectedRow: number): number {
     this.viewportSize = Math.max(capacity, 1)
@@ -76,7 +77,7 @@ export class StatusOverlayModel {
   ) {}
 
   summary(paint: Paint) {
-    return sidebarRows(this.read(), paint, this.metadata())
+    return sidebarRows(this.read(), paint, { ...this.metadata(), expandedLists: this.expandedLists })
   }
 
   entries(): Entry[] {
@@ -104,6 +105,12 @@ export class StatusOverlayModel {
   /** Handles one key by name: `up`, `down`, `enter`, `escape` or a digit. */
   press(key: string): void {
     this.current()
+    if (key === 'expand') {
+      this.expandedLists = !this.expandedLists
+      this.followSelection = false
+      this.scroll = null
+      return
+    }
     if (key === 'pageup' || key === 'pagedown') {
       this.scroll = Math.max(0, this.viewportStart + (key === 'pageup' ? -1 : 1) * Math.max(this.viewportSize - 1, 1))
       return
@@ -170,6 +177,7 @@ export function keyName(data: string): string | null {
   if (matchesKey(data, 'pageUp')) return 'pageup'
   if (matchesKey(data, 'pageDown')) return 'pagedown'
   if (matchesKey(data, 'tab')) return 'tab'
+  if (data === 'a') return 'expand'
   if (matchesKey(data, 'alt+s')) return 'focus'
   // Shifted arrows move the right sidebar's left edge; punctuation changes its width.
   if (matchesKey(data, 'shift+right') || data === '<') return '<'
@@ -193,7 +201,7 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
       if (selected) selectedLine = body.length
       body.push(selected ? paint.fg('accent', `▶ ${row.text.trimStart()}`) : row.text)
     }
-    if (focused) body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · Shift+←/→ resize'))
+    if (focused) body.push('', paint.fg('dim', '↑↓ move · Enter answer · a more/less · Tab/Esc editor · Shift+←/→ resize'))
   } else {
     body.push(paint.bold(entryLine(entry)), ...entryDetail(entry).map(detail => paint.fg('dim', detail)), '')
     model.choices().forEach((choice, index) => {

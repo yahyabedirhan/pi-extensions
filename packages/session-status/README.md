@@ -42,7 +42,7 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 
 - **State**: Blocked, In progress, Settling, Waiting for reply or Settled, as in the mod.
 - **Links**: `⇄` a pull request (green open, purple merged, red closed), `◎` an open issue, `⊙` a closed one. Each label is a terminal link to its page.
-- Each summary list shows its newest few, then `+N more`. The sidebar lists every open entry.
+- Each summary list shows its newest few, then `+N more`. Press `a` in the focused sidebar to reveal the remaining summary entries. The sidebar lists every open decision, blocker, surprise and observation.
 - The sidebar starts with the current state, without an extra title. Sections have a blank-line gap, matching the Claude Code pane: Now, Session, Effort, Links, decisions, surprises, observations, answered count and last update.
 - Session metadata uses aligned ID, Branch and Worktree rows, followed by progress. Links have their own heading. Each open entry appears once in its section; focus the sidebar to navigate and answer it.
 - The sidebar overlays the right side of the terminal; it does not shrink the transcript. It fills the terminal height and wraps text.
@@ -65,6 +65,7 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 | `Esc` (or `q`) | Go back to the list, then release focus to the editor. |
 | `Tab` | Release focus to the editor without hiding the sidebar. |
 | `PageUp` `PageDown` | Scroll the text without changing the selected entry or choice. |
+| `a` | Expand or collapse the Session, Effort and Links summary lists while focused. |
 | `/session-status widget hide`, `widget show` | Disable or enable the compact widget when the sidebar is hidden. The footer line stays. |
 | `/session-status reset` | Clear the whole session status, as the mod's reset does. |
 

@@ -1,5 +1,5 @@
 // Pane layout follows yahyabedirhan/claude-mods at ec4fd502ec244ad09ec49273e30a16b070189d05.
-import type { Decision, SessionStatus, Surprise } from './core/types'
+import type { Blocker, Decision, SessionStatus, Surprise } from './core/types'
 import { HEADLINE_TEXT, headline } from './core/hooks/activity'
 import type { Headline } from './core/hooks/activity'
 import { effortProgress, effortTickets } from './core/hooks/effort-progress'
@@ -7,10 +7,11 @@ import { linkLabel } from './core/hooks/links'
 import { listedItems } from './core/hooks/session-items'
 import { sessionProgress } from './core/hooks/session-progress'
 import { ticketShortName } from './core/hooks/ticket-reports'
-import { isOpen, onEndList, openBlockers, openFollowUps, openToDecide } from './core/hooks/status'
+import { isOpen, onEndList } from './core/hooks/status'
+import { openEntries } from './replies'
 import type { Paint, Tone } from './view'
 
-export type SidebarMetadata = { branch?: string; cwd?: string; now?: { tool: string; text: string } }
+export type SidebarMetadata = { branch?: string; cwd?: string; now?: { tool: string; text: string }; expandedLists?: boolean }
 export type SidebarRow = { text: string; entryId?: string }
 
 const tones: Record<Headline, Tone> = { blocked: 'warning', working: 'success', settling: 'success', waiting: 'accent', settled: 'dim' }
@@ -22,12 +23,13 @@ const bar = (done: number, total: number) => {
 /** Unwrapped rows: only the first row of an actionable entry owns its selection id. */
 export function sidebarRows(status: SessionStatus, paint: Paint, metadata: SidebarMetadata = {}, now = Date.now()): SidebarRow[] {
   const blocks: SidebarRow[][] = []
+  const entries = openEntries(status)
   const row = (text: string): SidebarRow => ({ text })
   const section = (title: string, rows: SidebarRow[]) => {
     if (rows.length) blocks.push([row(paint.bold(title)), ...rows])
   }
   const detail = (text: string) => row(paint.fg('dim', `  ${text}`))
-  const more = (count: number) => count > 0 ? [detail(`+${count} more`)] : []
+  const more = (count: number) => !metadata.expandedLists && count > 0 ? [detail(`+${count} more`)] : []
   const decision = (d: Decision, tone: Tone): SidebarRow[] => [
     { text: `${paint.fg(tone, d.id)}${d.discussingAt === undefined ? '' : paint.fg('dim', ' (discussing)')} · ${d.question}`, entryId: d.id },
     ...(d.urgency === 'blocked' ? [detail(`Unblocks: ${d.unblocks}`)] : []),
@@ -42,9 +44,9 @@ export function sidebarRows(status: SessionStatus, paint: Paint, metadata: Sideb
   if (state !== null) blocks.push([row(paint.bold(paint.fg(tones[state], `● ${HEADLINE_TEXT[state]}`)))])
   const doing = metadata.now ?? status.doingNow
   section('Now', [row(doing ? (doing.text === '' ? doing.tool : `${doing.tool}: ${doing.text}`) : paint.fg('dim', 'Nothing yet.'))])
-  const blocked = status.items.filter((i): i is Decision => i.kind === 'decision' && i.urgency === 'blocked' && isOpen(i))
+  const blocked = entries.filter((i): i is Decision => i.kind === 'decision' && i.urgency === 'blocked')
   section(`Blocked on you (${blocked.length})`, blocked.flatMap(d => decision(d, 'warning')))
-  const blockers = openBlockers(status)
+  const blockers = entries.filter((i): i is Blocker => i.kind === 'blocker')
   section(`You should know (${blockers.length})`, blockers.flatMap(b => [
     { text: `${paint.fg('warning', b.id)} · ${b.failed}`, entryId: b.id }, detail(`To unblock: ${b.needs}`),
   ]))
@@ -58,10 +60,10 @@ export function sidebarRows(status: SessionStatus, paint: Paint, metadata: Sideb
   if (progress && progress.total > 0) {
     session.push(label('Progress', `${progress.done}/${progress.total} ${bar(progress.done, progress.total)}`))
     const items = listedItems(status)
-    session.push(...items.slice(0, 2).map(i => row(`${paint.fg('dim', i.state === 'done' ? '✓' : '○')} ${paint.fg('accent', i.id)} ${i.title}`)), ...more(items.length - 2))
+    session.push(...items.slice(0, metadata.expandedLists ? undefined : 2).map(i => row(`${paint.fg('dim', i.state === 'done' ? '✓' : '○')} ${paint.fg('accent', i.id)} ${i.title}`)), ...more(items.length - 2))
   }
   if (progress && progress.building.length > 0) {
-    session.push(row(`Building: ${paint.fg('accent', progress.building.slice(0, 4).map(ticketShortName).join(', '))}`), ...more(progress.building.length - 4))
+    session.push(row(`Building: ${paint.fg('accent', progress.building.slice(0, metadata.expandedLists ? undefined : 4).map(ticketShortName).join(', '))}`), ...more(progress.building.length - 4))
   }
   section('Session', session)
   if (status.effort) {
@@ -69,10 +71,10 @@ export function sidebarRows(status: SessionStatus, paint: Paint, metadata: Sideb
     const tickets = effortTickets(status)
     section(`Effort  ${status.effort.name}`, [
       ...(effort ? [label('Closed', `${effort.closed}/${effort.total} ${bar(effort.closed, effort.total)}`)] : []),
-      ...tickets.slice(0, 2).map(t => row(`${paint.fg('dim', t.isClosed ? '✓' : '○')} #${t.number} ${t.title}`)), ...more(tickets.length - 2),
+      ...tickets.slice(0, metadata.expandedLists ? undefined : 2).map(t => row(`${paint.fg('dim', t.isClosed ? '✓' : '○')} #${t.number} ${t.title}`)), ...more(tickets.length - 2),
     ])
   }
-  const links = status.links.slice(-5).reverse().map(link => {
+  const links = status.links.slice(metadata.expandedLists ? 0 : -5).reverse().map(link => {
       const state = link.state ?? 'open'
       const mark = link.kind === 'pr' ? paint.fg(state === 'open' ? 'success' : state === 'merged' ? 'accent' : 'error', '⇄')
         : paint.fg(state === 'open' ? 'success' : 'accent', state === 'open' ? '◎' : '⊙')
@@ -80,19 +82,20 @@ export function sidebarRows(status: SessionStatus, paint: Paint, metadata: Sideb
     })
   section('Links', links.length === 0 ? [] : [row(links.join(paint.fg('dim', ' · '))), ...more(status.links.length - 5)])
   const asked = new Set(onEndList(status).map(d => d.id))
-  const decisions = openToDecide(status)
-  const ordered = [...decisions.filter(d => asked.has(d.id)), ...decisions.filter(d => !asked.has(d.id)).reverse()]
+  const ordered = entries.filter((i): i is Decision => i.kind === 'decision' && i.urgency === 'before_settling')
   section(`Decide before settling (${ordered.length})`, ordered.flatMap(d => decision(d, asked.has(d.id) ? 'warning' : 'accent')))
-  const follow = openFollowUps(status).reverse()
+  const follow = entries.filter((i): i is Decision => i.kind === 'decision' && i.urgency === 'after_settling')
   section(`Follow-up after settling (${follow.length})`, follow.flatMap(d => decision(d, 'accent')))
-  const surprises = status.items.filter((i): i is Surprise => i.kind === 'surprise' && isOpen(i)).reverse()
+  const surprises = entries.filter((i): i is Surprise => i.kind === 'surprise')
   for (const observer of [false, true]) {
     const entries = surprises.filter(s => (s.source === 'observer') === observer)
     section(`${observer ? 'Observations' : 'Surprises'} (${entries.length})`, entries.flatMap(surprise))
   }
   const answered = status.items.filter(i => !isOpen(i)).length
   if (answered) blocks.push([row(paint.fg('dim', `Answered (${answered})`))])
-  if (status.updatedAt !== null) {
+  if (status.updatedAt === null) {
+    blocks.push([row(paint.fg('dim', 'No update yet.'))])
+  } else {
     const date = new Date(status.updatedAt)
     const clock = [date.getHours(), date.getMinutes(), date.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')
     blocks.push([row(paint.fg('dim', `Last update ${clock} · ${age(now - status.updatedAt)}`))])
