@@ -191,6 +191,7 @@ export function keyName(data: string): string | null {
 export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number, focused = false): string[] {
   const inner = Math.max(width - 4, 1)
   const body: string[] = []
+  const truncateRows = new Set<number>()
   let selectedLine = -1
   const entry = model.current()
   if (entry === null) {
@@ -199,6 +200,7 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
     for (const row of model.summary(paint)) {
       const selected = row.entryId !== undefined && row.entryId === selectedId
       if (selected) selectedLine = body.length
+      if (row.truncate) truncateRows.add(body.length)
       body.push(selected ? paint.fg('accent', `▶ ${row.text.trimStart()}`) : row.text)
     }
     if (focused) body.push('', paint.fg('dim', '↑↓ move · Enter answer · a more/less · Tab/Esc editor · Shift+←/→ resize'))
@@ -222,7 +224,7 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
   const wrapped: string[] = []
   body.forEach((line, index) => {
     if (index === selectedLine) selectedRow = wrapped.length
-    wrapped.push(...wrapTextWithAnsi(line, inner))
+    wrapped.push(...(truncateRows.has(index) ? [truncateToWidth(line, inner)] : wrapTextWithAnsi(line, inner)))
   })
   const capacity = height === undefined ? wrapped.length : Math.max(height - 2, 0)
   const start = model.viewport(wrapped.length, capacity, selectedRow)

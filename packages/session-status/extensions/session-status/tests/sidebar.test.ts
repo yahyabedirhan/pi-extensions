@@ -48,6 +48,17 @@ test('narrow sidebar wraps long entries and scrolls selection within terminal he
   }
 })
 
+test('the current tool stays on one line so long commands do not crowd sections', () => {
+  const store = new StatusStore('s', null, () => undefined)
+  const model = new StatusOverlayModel(() => store.get(), () => undefined, () => ({ now: { tool: 'bash', text: 'very long command '.repeat(30) } }))
+  const lines = overlayLines(model, plain, 24)
+  const now = lines.findIndex(line => line.includes('Now'))
+  const session = lines.findIndex(line => line.includes('Session'))
+  expect(session - now).toBe(3)
+  expect(lines[now + 1]).toContain('bash:')
+  expect(lines.every(line => visibleWidth(line) <= 24)).toBe(true)
+})
+
 test('the a key expands and collapses overflow lists without changing status', () => {
   const store = new StatusStore('s', null, () => undefined)
   for (let n = 0; n < 5; n++) runStatusCall(store, { action: 'item', state: 'added', title: `Work ${n}` }, n, effects)

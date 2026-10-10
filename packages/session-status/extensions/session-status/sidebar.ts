@@ -12,7 +12,7 @@ import { openEntries } from './replies'
 import type { Paint, Tone } from './view'
 
 export type SidebarMetadata = { branch?: string; cwd?: string; now?: { tool: string; text: string }; expandedLists?: boolean }
-export type SidebarRow = { text: string; entryId?: string }
+export type SidebarRow = { text: string; entryId?: string; truncate?: boolean }
 
 const tones: Record<Headline, Tone> = { blocked: 'warning', working: 'success', settling: 'success', waiting: 'accent', settled: 'dim' }
 const bar = (done: number, total: number) => {
@@ -43,7 +43,9 @@ export function sidebarRows(status: SessionStatus, paint: Paint, metadata: Sideb
   const state = headline(status)
   if (state !== null) blocks.push([row(paint.bold(paint.fg(tones[state], `● ${HEADLINE_TEXT[state]}`)))])
   const doing = metadata.now ?? status.doingNow
-  section('Now', [row(doing ? (doing.text === '' ? doing.tool : `${doing.tool}: ${doing.text}`) : paint.fg('dim', 'Nothing yet.'))])
+  section('Now', [doing
+    ? { text: doing.text === '' ? doing.tool : `${doing.tool}: ${doing.text}`, truncate: true }
+    : row(paint.fg('dim', 'Nothing yet.'))])
   const blocked = entries.filter((i): i is Decision => i.kind === 'decision' && i.urgency === 'blocked')
   section(`Blocked on you (${blocked.length})`, blocked.flatMap(d => decision(d, 'warning')))
   const blockers = entries.filter((i): i is Blocker => i.kind === 'blocker')
