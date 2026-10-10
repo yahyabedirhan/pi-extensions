@@ -176,7 +176,7 @@ export default function sessionStatus(pi: ExtensionAPI): void {
         invalidate: () => undefined,
       }
       instance.handle = tui.showOverlay(component, {
-        get width(): number | '36%' { return sidebarWidth(panelWidth) },
+        get width(): number { return sidebarWidth(panelWidth) },
         minWidth: MIN_SIDEBAR_WIDTH, maxHeight: '100%', anchor: 'top-right', margin: 0, nonCapturing: true,
       })
       instance.handle.setHidden(!instance.visible)
@@ -204,31 +204,31 @@ export default function sessionStatus(pi: ExtensionAPI): void {
   })
 
   pi.registerCommand(COMMAND, {
-    description: 'Toggle the sidebar; on, off, focus, width N; hide/show the widget; reset status',
+    description: 'Toggle the sidebar; sidebar show/hide/focus/width N; widget show/hide; reset status',
     getArgumentCompletions: prefix =>
-      ['on', 'off', 'focus', 'width ', 'hide', 'show', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
+      ['sidebar show', 'sidebar hide', 'sidebar focus', 'sidebar width ', 'widget show', 'widget hide', 'reset'].filter(arg => arg.startsWith(prefix)).map(arg => ({ value: arg, label: arg })),
     handler: async (args, ctx) => {
       const arg = args.trim().toLowerCase()
       const current = holdSession(ctx)
       if (arg === 'reset') {
         ctx.ui.notify(reset(current), 'info')
-      } else if (arg === 'hide' || arg === 'show') {
-        isWidgetHidden = arg === 'hide'
+      } else if (arg === 'widget hide' || arg === 'widget show') {
+        isWidgetHidden = arg === 'widget hide'
         draw()
-      } else if (arg === 'off' || (arg === '' && panel?.visible)) {
+      } else if (arg === 'sidebar hide' || (arg === '' && panel?.visible)) {
         if (panel !== null) {
           panel.visible = false
           panel.handle?.unfocus()
           panel.handle?.setHidden(true)
           draw()
         }
-      } else if (arg === '' || arg === 'on' || arg === 'focus') {
-        showPanel(ctx, arg === 'focus')
-      } else if (/^width [1-9]\d*$/.test(arg) && Number(arg.slice(6)) >= MIN_SIDEBAR_WIDTH) {
-        panelWidth = Number(arg.slice(6))
+      } else if (arg === '' || arg === 'sidebar show' || arg === 'sidebar focus') {
+        showPanel(ctx, arg === 'sidebar focus')
+      } else if (/^sidebar width [1-9]\d*$/.test(arg) && Number(arg.slice(14)) >= MIN_SIDEBAR_WIDTH) {
+        panelWidth = Number(arg.slice(14))
         panel?.render?.()
       } else {
-        ctx.ui.notify(`Use /${COMMAND} [on|off|focus|width N|hide|show|reset]; width must be at least 12 columns.`, 'warning')
+        ctx.ui.notify(`Use /${COMMAND} [sidebar show|sidebar hide|sidebar focus|sidebar width N|widget show|widget hide|reset]; width must be at least 12 columns.`, 'warning')
       }
     },
   })

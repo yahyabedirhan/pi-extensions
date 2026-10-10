@@ -44,7 +44,7 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 - **Links**: `⇄` a pull request (green open, purple merged, red closed), `◎` an open issue, `⊙` a closed one. Each label is a terminal link to its page.
 - Each summary list shows its newest few, then `+N more`. The sidebar lists every open entry.
 - The sidebar overlays the right side of the terminal; it does not shrink the transcript. It fills the terminal height and wraps text.
-- The sidebar starts off. Its default width is 36% of the terminal, bounded by the terminal and a 12-column minimum.
+- The sidebar starts off. Its default width is 64 columns, bounded by the terminal. Resizing has a 12-column minimum unless the terminal is narrower.
 - While the sidebar is visible, it replaces the above-editor widget. Turning it off restores the widget unless you hid it.
 
 ## Keys and commands
@@ -52,19 +52,21 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 | Key or command | What it does |
 |---|---|
 | `/session-status` | Toggle sidebar visibility without taking editor focus. |
-| `/session-status on`, `off` | Show or hide the sidebar. |
-| `alt+s` or `/session-status focus` | Show and focus the sidebar, or release focus if already focused. |
+| `/session-status sidebar show`, `sidebar hide` | Show or hide the sidebar without changing the widget preference. |
+| `alt+s` or `/session-status sidebar focus` | Show and focus the sidebar, or release focus if already focused. |
 | `Shift+←` `Shift+→` | Move the left edge by four columns while focused: left expands, right shrinks. |
 | `<` `>` | Shrink or grow by four columns while focused. |
-| `/session-status width N` | Set sidebar width in columns (at least 12). |
+| `/session-status sidebar width N` | Set sidebar width in columns (at least 12). |
 | `↑` `↓` (or `j` `k`) | Move in the sidebar; the selected row stays visible. |
 | `Enter` | Open the entry's choices, or pick the selected choice. |
 | `1`-`9` | Pick a choice by its number. |
 | `Esc` (or `q`) | Go back to the list, then release focus to the editor. |
 | `Tab` | Release focus to the editor without hiding the sidebar. |
 | `PageUp` `PageDown` | Scroll the text without changing the selected entry or choice. |
-| `/session-status hide`, `show` | Hide or show the widget. The footer line stays. |
+| `/session-status widget hide`, `widget show` | Disable or enable the compact widget when the sidebar is hidden. The footer line stays. |
 | `/session-status reset` | Clear the whole session status, as the mod's reset does. |
+
+Use `/session-status` alone for everyday sidebar toggling. The explicit `sidebar` and `widget` commands control separate displays; the widget stays suppressed while the sidebar is visible. Old flat arguments such as `on`, `off`, `hide` and `show` are no longer accepted. `reset` clears the recorded status, not just the display.
 
 The selected entry or choice starts near the top, so its wrapped text and details stay readable. Use PageUp and PageDown for long choices or the summary; arrow navigation returns to the selected entry.
 

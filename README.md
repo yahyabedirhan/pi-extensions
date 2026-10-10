@@ -33,7 +33,7 @@ The root is development tooling, **not a Pi package**. Do not install the root G
 
 ### Migrate an existing bundle installation
 
-Run `pi list` to find the old root-repository declaration. Install the desired package directories, then remove the exact old declaration with `pi remove <old-source>` to avoid loading both versions. Do not remove unrelated packages. In an existing interactive session, run `/reload` after changing installations; Session Status's `/session-status on` opens the sidebar.
+Run `pi list` to find the old root-repository declaration. Install the desired package directories, then remove the exact old declaration with `pi remove <old-source>` to avoid loading both versions. Do not remove unrelated packages. In an existing interactive session, run `/reload` after changing installations; Session Status's `/session-status` toggles the sidebar, and `/session-status sidebar show` explicitly opens it.
 
 No npm packages are published by this change. The workspace names `pi-session-status-local` and `pi-subagent-guard-local`, version `0.0.0`, are private placeholders, not approved registry identities. Registry names, release versions and publication require a separate decision.
 

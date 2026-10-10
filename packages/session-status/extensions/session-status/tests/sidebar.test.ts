@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import { StatusOverlayModel, overlayLines, keyName } from '../overlay'
+import { StatusOverlayModel, overlayLines, keyName, sidebarWidth, resizeSidebarWidth } from '../overlay'
 import { StatusStore } from '../state'
 import { runStatusCall } from '../tool'
 import { plain } from '../view'
@@ -13,6 +13,21 @@ test.each([
   ['\u001b[d', '>'], ['\u001b[c', '<'], // rxvt modified arrows
 ])('resize key %j maps to %s', (input, direction) => {
   expect(keyName(input)).toBe(direction)
+})
+
+test('default sidebar width is 64 columns and explicit widths remain supported', () => {
+  expect(sidebarWidth(undefined)).toBe(64)
+  expect(sidebarWidth(52)).toBe(52)
+  expect(resizeSidebarWidth(undefined, 100, 1)).toBe(68)
+  expect(resizeSidebarWidth(undefined, 100, -1)).toBe(60)
+})
+
+test('resizing starts from the visible width in narrow terminals and respects bounds', () => {
+  expect(resizeSidebarWidth(undefined, 40, -1)).toBe(36)
+  expect(resizeSidebarWidth(undefined, 40, 1)).toBe(40)
+  expect(resizeSidebarWidth(80, 40, -1)).toBe(36)
+  expect(resizeSidebarWidth(12, 100, -1)).toBe(12)
+  expect(resizeSidebarWidth(undefined, 8, -1)).toBe(8)
 })
 
 test('unmodified left and right arrows are not resize keys', () => {

@@ -39,15 +39,16 @@ function entryDetail(entry: Entry): string[] {
 
 /** Sidebar sizing policy, independent of Pi's overlay lifecycle. */
 export const MIN_SIDEBAR_WIDTH = 12
-const DEFAULT_SIDEBAR_RATIO = 0.36
+const DEFAULT_SIDEBAR_WIDTH = 64
 const SIDEBAR_RESIZE_STEP = 4
 
-export function sidebarWidth(width: number | undefined): number | '36%' {
-  return width ?? '36%'
+export function sidebarWidth(width: number | undefined): number {
+  return width ?? DEFAULT_SIDEBAR_WIDTH
 }
 
 export function resizeSidebarWidth(width: number | undefined, columns: number, direction: -1 | 1): number {
-  return Math.max(MIN_SIDEBAR_WIDTH, Math.min(columns, (width ?? Math.round(columns * DEFAULT_SIDEBAR_RATIO)) + direction * SIDEBAR_RESIZE_STEP))
+  const current = Math.min(columns, sidebarWidth(width))
+  return Math.min(columns, Math.max(MIN_SIDEBAR_WIDTH, current + direction * SIDEBAR_RESIZE_STEP))
 }
 
 /** The sidebar's selection and viewport state, driven by named keys. */
