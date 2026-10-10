@@ -9,8 +9,8 @@ const effects = { ping: () => undefined, linked: () => undefined, ticketReported
 
 test.each([
   ['<', '<'], ['>', '>'],
-  ['\u001b[1;2D', '<'], ['\u001b[1;2C', '>'], // xterm modified arrows
-  ['\u001b[d', '<'], ['\u001b[c', '>'], // rxvt modified arrows
+  ['\u001b[1;2D', '>'], ['\u001b[1;2C', '<'], // xterm: arrows move the left edge
+  ['\u001b[d', '>'], ['\u001b[c', '<'], // rxvt modified arrows
 ])('resize key %j maps to %s', (input, direction) => {
   expect(keyName(input)).toBe(direction)
 })

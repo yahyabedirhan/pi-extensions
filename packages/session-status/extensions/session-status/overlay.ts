@@ -165,8 +165,9 @@ export function keyName(data: string): string | null {
   if (matchesKey(data, 'pageDown')) return 'pagedown'
   if (matchesKey(data, 'tab')) return 'tab'
   if (matchesKey(data, 'alt+s')) return 'focus'
-  if (matchesKey(data, 'shift+left') || data === '<') return '<'
-  if (matchesKey(data, 'shift+right') || data === '>') return '>'
+  // Shifted arrows move the right sidebar's left edge; punctuation changes its width.
+  if (matchesKey(data, 'shift+right') || data === '<') return '<'
+  if (matchesKey(data, 'shift+left') || data === '>') return '>'
   if (/^[1-9]$/.test(data)) return data
 
   return null
