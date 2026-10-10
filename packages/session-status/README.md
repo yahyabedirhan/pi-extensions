@@ -18,7 +18,7 @@ From this package directory, use `pi -e .` or `pi install .` instead. Local inst
 
 ## What you see
 
-A widget above the editor, drawn only while something is open:
+A widget above the editor, drawn only while something is open. A muted rounded border, a “Session status” label and one-cell padding separate it from Pi's other widgets:
 
 ```text
 ● Blocked · alt+s to answer

@@ -104,6 +104,12 @@ test('a tool call saves the status as a custom entry and draws the widget and ba
   expect(entries.at(-1)?.customType).toBe(ENTRY_TYPE)
   expect(typeof widgets.get('session-status')).toBe('function')
   expect(statuses.get('session-status')).toBe('0 blocked · 0 decide · 1 surprise')
+  const factory = widgets.get('session-status') as any
+  const component = factory({}, { fg: (_tone: string, text: string) => text, bold: (text: string) => text })
+  const rendered = component.render(64)
+  expect(rendered[0]).toContain('╭─ Session status ')
+  expect(rendered.at(-1)).toContain('╰')
+  expect(rendered.join('\n')).toContain('S1 x')
 })
 
 test('a refused call throws, so Pi marks the result as an error', async () => {

@@ -3,7 +3,7 @@
 // beside it. Keep feature logic in those modules; keep only I/O here.
 
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
-import { type OverlayHandle, hyperlink, truncateToWidth } from '@earendil-works/pi-tui'
+import { type OverlayHandle, hyperlink } from '@earendil-works/pi-tui'
 import { Type } from 'typebox'
 
 import { afterTurn, settlesByPrompt } from './core/hooks/activity'
@@ -18,7 +18,7 @@ import { ENTRY_TYPE, StatusStore, restoreStatus } from './state'
 import type { EntryLike } from './state'
 import { TOOL_DESCRIPTION, TOOL_NAME, forPi, reset, runStatusCall } from './tool'
 import type { StatusEffects } from './tool'
-import { OVERLAY_HINT, bandText, widgetLines } from './view'
+import { OVERLAY_HINT, bandText, widgetFrame, widgetLines } from './view'
 import type { Paint } from './view'
 
 const COMMAND = 'session-status'
@@ -120,7 +120,10 @@ export default function sessionStatus(pi: ExtensionAPI): void {
       return
     }
     ui.setWidget(WIDGET_KEY, (_tui, theme) => ({
-      render: (width: number) => widgetLines(current.get(), paintFor(theme)).map(line => truncateToWidth(line, width)),
+      render: (width: number) => {
+        const paint = paintFor(theme)
+        return widgetFrame(widgetLines(current.get(), paint), width, paint)
+      },
       invalidate: () => undefined,
     }))
   }
