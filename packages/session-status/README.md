@@ -54,7 +54,7 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 | `/session-status` | Toggle sidebar visibility without taking editor focus. |
 | `/session-status on`, `off` | Show or hide the sidebar. |
 | `alt+s` or `/session-status focus` | Show and focus the sidebar, or release focus if already focused. |
-| `<` `>` | Resize by four columns while focused. |
+| `Shift+←` `Shift+→`, or `<` `>` | Shrink or grow by four columns while focused. |
 | `/session-status width N` | Set sidebar width in columns (at least 12). |
 | `↑` `↓` (or `j` `k`) | Move in the sidebar; the selected row stays visible. |
 | `Enter` | Open the entry's choices, or pick the selected choice. |

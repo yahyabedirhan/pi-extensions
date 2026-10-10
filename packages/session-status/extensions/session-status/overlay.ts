@@ -165,7 +165,8 @@ export function keyName(data: string): string | null {
   if (matchesKey(data, 'pageDown')) return 'pagedown'
   if (matchesKey(data, 'tab')) return 'tab'
   if (matchesKey(data, 'alt+s')) return 'focus'
-  if (data === '<' || data === '>') return data
+  if (matchesKey(data, 'shift+left') || data === '<') return '<'
+  if (matchesKey(data, 'shift+right') || data === '>') return '>'
   if (/^[1-9]$/.test(data)) return data
 
   return null
@@ -192,7 +193,7 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
         body.push(...entryDetail(candidate).map(detail => paint.fg('dim', `    ${detail}`)))
       }
     })
-    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · < > resize'))
+    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · Shift+←/→ or < > resize'))
   } else {
     body.push(paint.bold(entryLine(entry)), ...entryDetail(entry).map(detail => paint.fg('dim', detail)), '')
     model.choices().forEach((choice, index) => {
