@@ -1,13 +1,13 @@
-// The overlay that answers the status: pick an open entry, then one of its
-// choices. It resolves with the choice; index.ts applies it and sends the
-// prompt. Keys: ↑↓ (or j/k) move, Enter opens or picks, 1-9 pick a choice,
-// Esc goes back, then closes.
+// The persistent sidebar's list and choices. Answers reset the selection;
+// index.ts applies them without removing the owned overlay.
+// Esc goes back from details, then releases focus from the list.
 
-import { matchesKey, truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
+import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@earendil-works/pi-tui'
 
 import type { SessionStatus } from './core/types'
 import { choicesFor, openEntries } from './replies'
 import type { Choice, Entry, LabeledChoice } from './replies'
+import { widgetLines } from './view'
 import type { Paint } from './view'
 
 /** One line that names an entry: its id, its text and its kind's heading. */
@@ -37,19 +37,43 @@ function entryDetail(entry: Entry): string[] {
   }
 }
 
-/**
- * The overlay's state and keys, apart from drawing: index.ts and the tests
- * drive it with key names.
- */
+/** Sidebar sizing policy, independent of Pi's overlay lifecycle. */
+export const MIN_SIDEBAR_WIDTH = 12
+const DEFAULT_SIDEBAR_RATIO = 0.36
+const SIDEBAR_RESIZE_STEP = 4
+
+export function sidebarWidth(width: number | undefined): number | '36%' {
+  return width ?? '36%'
+}
+
+export function resizeSidebarWidth(width: number | undefined, columns: number, direction: -1 | 1): number {
+  return Math.max(MIN_SIDEBAR_WIDTH, Math.min(columns, (width ?? Math.round(columns * DEFAULT_SIDEBAR_RATIO)) + direction * SIDEBAR_RESIZE_STEP))
+}
+
+/** The sidebar's selection and viewport state, driven by named keys. */
 export class StatusOverlayModel {
   private selected = 0
   private openEntry: Entry | null = null
   private choiceIndex = 0
+  private scroll: number | null = null
+  private viewportStart = 0
+  private viewportSize = 1
+
+  viewport(total: number, capacity: number, selectedRow: number): number {
+    this.viewportSize = Math.max(capacity, 1)
+    const automatic = Math.max(selectedRow - 1, 0)
+    this.viewportStart = Math.max(0, Math.min(this.scroll ?? automatic, Math.max(total - capacity, 0)))
+    return this.viewportStart
+  }
 
   constructor(
     private readonly read: () => SessionStatus,
     private readonly done: (choice: Choice | undefined) => void,
   ) {}
+
+  summary(paint: Paint): string[] {
+    return widgetLines(this.read(), paint)
+  }
 
   entries(): Entry[] {
     return openEntries(this.read())
@@ -57,6 +81,9 @@ export class StatusOverlayModel {
 
   /** The entry the choices belong to; null while the list shows. */
   current(): Entry | null {
+    if (this.openEntry !== null) {
+      this.openEntry = this.entries().find(entry => entry.id === this.openEntry?.id) ?? null
+    }
     return this.openEntry
   }
 
@@ -65,11 +92,19 @@ export class StatusOverlayModel {
   }
 
   selection(): number {
+    this.current()
+    this.choiceIndex = Math.min(this.choiceIndex, Math.max(this.choices().length - 1, 0))
     return this.openEntry === null ? Math.min(this.selected, Math.max(this.entries().length - 1, 0)) : this.choiceIndex
   }
 
   /** Handles one key by name: `up`, `down`, `enter`, `escape` or a digit. */
   press(key: string): void {
+    this.current()
+    if (key === 'pageup' || key === 'pagedown') {
+      this.scroll = Math.max(0, this.viewportStart + (key === 'pageup' ? -1 : 1) * Math.max(this.viewportSize - 1, 1))
+      return
+    }
+    this.scroll = null
     const size = this.openEntry === null ? this.entries().length : this.choices().length
     const index = this.selection()
     if (key === 'escape') {
@@ -112,6 +147,9 @@ export class StatusOverlayModel {
     }
     const choice = this.choices()[index]
     if (choice !== undefined) {
+      this.openEntry = null
+      this.selected = 0
+      this.choiceIndex = 0
       this.done(choice.choice)
     }
   }
@@ -123,36 +161,44 @@ export function keyName(data: string): string | null {
   if (matchesKey(data, 'down') || data === 'j') return 'down'
   if (matchesKey(data, 'return') || matchesKey(data, 'enter')) return 'enter'
   if (matchesKey(data, 'escape') || data === 'q') return 'escape'
+  if (matchesKey(data, 'pageUp')) return 'pageup'
+  if (matchesKey(data, 'pageDown')) return 'pagedown'
+  if (matchesKey(data, 'tab')) return 'tab'
+  if (matchesKey(data, 'alt+s')) return 'focus'
+  if (data === '<' || data === '>') return data
   if (/^[1-9]$/.test(data)) return data
 
   return null
 }
 
 /** The overlay's lines for a width, framed. */
-export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number): string[] {
-  const inner = Math.max(width - 4, 10)
+export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number): string[] {
+  const inner = Math.max(width - 4, 1)
   const body: string[] = []
+  let selectedLine = -1
   const entry = model.current()
   if (entry === null) {
     const entries = model.entries()
-    body.push(paint.bold('Session status'), '')
+    body.push(paint.bold('Session status'), ...model.summary(paint), '', paint.bold('Open entries'))
     if (entries.length === 0) {
       body.push(paint.fg('dim', 'Nothing is open.'))
     }
     entries.forEach((candidate, index) => {
       const isSelected = index === model.selection()
       const line = `${isSelected ? '▶' : ' '} ${entryLine(candidate)}`
+      if (isSelected) selectedLine = body.length
       body.push(isSelected ? paint.fg('accent', line) : line)
       if (isSelected) {
         body.push(...entryDetail(candidate).map(detail => paint.fg('dim', `    ${detail}`)))
       }
     })
-    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Esc close'))
+    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · < > resize'))
   } else {
     body.push(paint.bold(entryLine(entry)), ...entryDetail(entry).map(detail => paint.fg('dim', detail)), '')
     model.choices().forEach((choice, index) => {
       const isSelected = index === model.selection()
       const line = `${isSelected ? '▶' : ' '} ${index + 1}. ${choice.label}`
+      if (isSelected) selectedLine = body.length
       body.push(isSelected ? paint.fg('accent', line) : line)
     })
     body.push('', paint.fg('dim', '↑↓ move · Enter or 1-9 pick · Esc back'))
@@ -163,9 +209,19 @@ export function overlayLines(model: StatusOverlayModel, paint: Paint, width: num
     return `${paint.fg('muted', '│')} ${cut}${' '.repeat(Math.max(inner - visibleWidth(cut), 0))} ${paint.fg('muted', '│')}`
   }
 
+  let selectedRow = -1
+  const wrapped: string[] = []
+  body.forEach((line, index) => {
+    if (index === selectedLine) selectedRow = wrapped.length
+    wrapped.push(...wrapTextWithAnsi(line, inner))
+  })
+  const capacity = height === undefined ? wrapped.length : Math.max(height - 2, 0)
+  const start = model.viewport(wrapped.length, capacity, selectedRow)
+  const visible = wrapped.slice(start, start + capacity)
+  while (visible.length < capacity) visible.push('')
   return [
     paint.fg('muted', `╭${'─'.repeat(inner + 2)}╮`),
-    ...body.map(row),
+    ...visible.map(row),
     paint.fg('muted', `╰${'─'.repeat(inner + 2)}╯`),
-  ]
+  ].slice(0, height).map(line => truncateToWidth(line, width))
 }

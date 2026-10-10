@@ -1,6 +1,6 @@
 # session-status
 
-Shows what the Pi session needs from you: open decisions, blockers, surprises, the session's own items and the pull requests and issues it touched. The agent keeps the status current with a `status` tool. You answer from an overlay, and your answer reaches the agent as your own prompt.
+Shows what the Pi session needs from you: open decisions, blockers, surprises, the session's own items and the pull requests and issues it touched. The agent keeps the status current with a `status` tool. You answer from a persistent right sidebar, and your answer reaches the agent as your own prompt.
 
 It is a port of the [session-status mod for Claude Code](https://github.com/yahyabedirhan/claude-mods/tree/main/plugins/session-status). The tool, its ids and its prompts are the same, so one set of agent instructions works in both harnesses.
 
@@ -42,21 +42,32 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 
 - **State**: Blocked, In progress, Settling, Waiting for reply or Settled, as in the mod.
 - **Links**: `⇄` a pull request (green open, purple merged, red closed), `◎` an open issue, `⊙` a closed one. Each label is a terminal link to its page.
-- Each list shows its newest few, then `+N more`. The overlay lists every open entry.
+- Each summary list shows its newest few, then `+N more`. The sidebar lists every open entry.
+- The sidebar overlays the right side of the terminal; it does not shrink the transcript. It fills the terminal height and wraps text.
+- The sidebar starts off. Its default width is 36% of the terminal, bounded by the terminal and a 12-column minimum.
+- While the sidebar is visible, it replaces the above-editor widget. Turning it off restores the widget unless you hid it.
 
 ## Keys and commands
 
 | Key or command | What it does |
 |---|---|
-| `alt+s` or `/session-status` | Opens the overlay. |
-| `↑` `↓` (or `j` `k`) | Move in the overlay. |
+| `/session-status` | Toggle sidebar visibility without taking editor focus. |
+| `/session-status on`, `off` | Show or hide the sidebar. |
+| `alt+s` or `/session-status focus` | Show and focus the sidebar, or release focus if already focused. |
+| `<` `>` | Resize by four columns while focused. |
+| `/session-status width N` | Set sidebar width in columns (at least 12). |
+| `↑` `↓` (or `j` `k`) | Move in the sidebar; the selected row stays visible. |
 | `Enter` | Open the entry's choices, or pick the selected choice. |
 | `1`-`9` | Pick a choice by its number. |
-| `Esc` (or `q`) | Go back to the list, then close. |
+| `Esc` (or `q`) | Go back to the list, then release focus to the editor. |
+| `Tab` | Release focus to the editor without hiding the sidebar. |
+| `PageUp` `PageDown` | Scroll the text without changing the selected entry or choice. |
 | `/session-status hide`, `show` | Hide or show the widget. The footer line stays. |
 | `/session-status reset` | Clear the whole session status, as the mod's reset does. |
 
-The overlay offers these choices, and sends the same prompts as the mod's pane buttons:
+The selected entry or choice starts near the top, so its wrapped text and details stay readable. Use PageUp and PageDown for long choices or the summary; arrow navigation returns to the selected entry.
+
+The sidebar stays open after an answer and returns to its list. It updates as the agent changes the status. It offers these choices, and sends the same prompts as the mod's pane buttons:
 
 | Entry | Choice | Sends |
 |---|---|---|
@@ -77,7 +88,7 @@ An answer given while the agent works waits until the turn ends (Pi's `followUp`
 | `status` tool: every action, field, id and reply text | Same. The tool is `status`, not `mcp__session-status__status`. |
 | System prompt section | Same text, added as a prompt section in `before_agent_start`. |
 | Decisions, blockers, surprises, session items, decide list, `list`, `reset`, `create`/`read`/`update`/`delete` | Same. |
-| Quick reply and surprise buttons | The overlay. Long options show too: the overlay has room for them. |
+| Quick reply and surprise buttons | The sidebar. Long options wrap. |
 | Links from `gh pr create`, `gh issue create`, and `gh` merge, close and reopen | Same, read from the `bash` tool's output. Link states come from one `gh api graphql` read. |
 | Effort: `effort:<name>` labels, `ticket` reports, the Building line, the tracker's count | Same. An effort skill counts as run when the agent reads its `SKILL.md`. |
 | Settling and Settled | A `/skill:settle-session` or `/skill:settle-effort` prompt, or a read of their `SKILL.md`. |
@@ -89,7 +100,7 @@ An answer given while the agent works waits until the turn ends (Pi's `followUp`
 - **Tasks, cron jobs and subagents.** Pi has no task list, cron tools or subagent events, so nothing fills them. The kinds `task`, `cron` and `place` stay accepted by `create`, `read`, `update` and `delete`, so the action set stays compatible; the widget does not show them.
 - **Places, the session ID, branch and worktree lines, Now, Answered and Last update.** Pi's footer shows the branch already. Places is a follow-up.
 - **The observer.** The small model that looks for loops and side issues is not ported yet.
-- **A side pane.** Pi has no docked pane, so the widget sits above the editor and the overlay answers.
+- **A docked side pane.** Pi's overlay API does not reserve transcript space. The persistent right sidebar covers that space instead. A zero-line widget hosts its owned TUI overlay; closing the sidebar removes only that overlay, not other dialogs.
 
 ## Privacy
 
