@@ -7,7 +7,8 @@ import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from '@ea
 import type { SessionStatus } from './core/types'
 import { choicesFor, openEntries } from './replies'
 import type { Choice, Entry, LabeledChoice } from './replies'
-import { widgetLines } from './view'
+import { sidebarRows } from './sidebar'
+import type { SidebarMetadata } from './sidebar'
 import type { Paint } from './view'
 
 /** One line that names an entry: its id, its text and its kind's heading. */
@@ -59,10 +60,11 @@ export class StatusOverlayModel {
   private scroll: number | null = null
   private viewportStart = 0
   private viewportSize = 1
+  private followSelection = false
 
   viewport(total: number, capacity: number, selectedRow: number): number {
     this.viewportSize = Math.max(capacity, 1)
-    const automatic = Math.max(selectedRow - 1, 0)
+    const automatic = this.followSelection ? Math.max(selectedRow - 1, 0) : 0
     this.viewportStart = Math.max(0, Math.min(this.scroll ?? automatic, Math.max(total - capacity, 0)))
     return this.viewportStart
   }
@@ -70,10 +72,11 @@ export class StatusOverlayModel {
   constructor(
     private readonly read: () => SessionStatus,
     private readonly done: (choice: Choice | undefined) => void,
+    private readonly metadata: () => SidebarMetadata = () => ({}),
   ) {}
 
-  summary(paint: Paint): string[] {
-    return widgetLines(this.read(), paint)
+  summary(paint: Paint) {
+    return sidebarRows(this.read(), paint, this.metadata())
   }
 
   entries(): Entry[] {
@@ -106,6 +109,7 @@ export class StatusOverlayModel {
       return
     }
     this.scroll = null
+    if (key === 'up' || key === 'down' || key === 'enter' || /^[1-9]$/.test(key)) this.followSelection = true
     const size = this.openEntry === null ? this.entries().length : this.choices().length
     const index = this.selection()
     if (key === 'escape') {
@@ -151,6 +155,7 @@ export class StatusOverlayModel {
       this.openEntry = null
       this.selected = 0
       this.choiceIndex = 0
+      this.followSelection = false
       this.done(choice.choice)
     }
   }
@@ -175,27 +180,20 @@ export function keyName(data: string): string | null {
 }
 
 /** The overlay's lines for a width, framed. */
-export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number): string[] {
+export function overlayLines(model: StatusOverlayModel, paint: Paint, width: number, height?: number, focused = false): string[] {
   const inner = Math.max(width - 4, 1)
   const body: string[] = []
   let selectedLine = -1
   const entry = model.current()
   if (entry === null) {
     const entries = model.entries()
-    body.push(paint.bold('Session status'), ...model.summary(paint), '', paint.bold('Open entries'))
-    if (entries.length === 0) {
-      body.push(paint.fg('dim', 'Nothing is open.'))
+    const selectedId = entries[model.selection()]?.id
+    for (const row of model.summary(paint)) {
+      const selected = row.entryId !== undefined && row.entryId === selectedId
+      if (selected) selectedLine = body.length
+      body.push(selected ? paint.fg('accent', `▶ ${row.text.trimStart()}`) : row.text)
     }
-    entries.forEach((candidate, index) => {
-      const isSelected = index === model.selection()
-      const line = `${isSelected ? '▶' : ' '} ${entryLine(candidate)}`
-      if (isSelected) selectedLine = body.length
-      body.push(isSelected ? paint.fg('accent', line) : line)
-      if (isSelected) {
-        body.push(...entryDetail(candidate).map(detail => paint.fg('dim', `    ${detail}`)))
-      }
-    })
-    body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · Shift+←/→ or < > resize'))
+    if (focused) body.push('', paint.fg('dim', '↑↓ move · Enter answer · Tab/Esc editor · Shift+←/→ resize'))
   } else {
     body.push(paint.bold(entryLine(entry)), ...entryDetail(entry).map(detail => paint.fg('dim', detail)), '')
     model.choices().forEach((choice, index) => {

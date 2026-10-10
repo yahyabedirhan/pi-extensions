@@ -1,7 +1,7 @@
 // The extension's wiring, driven through a fake Pi: the handlers it
 // registers, the entries it appends and the prompts it sends.
 
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { type TUI, TuiMainScreen } from '@earendil-works/pi-tui'
 
 import sessionStatus, { INSTRUCTIONS_TEXT } from '../index'
@@ -239,6 +239,44 @@ test('owned sidebar cleanup preserves another overlay in the real TUI stack', as
   expect(other.isFocused()).toBe(true)
   other.hide()
   expect(tui.hasOverlay()).toBe(false)
+})
+
+test('sidebar refreshes ages while visible and clears its timer on shutdown', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakePi()
+    const command = (arg: string) => f.commands.get('session-status').handler(arg, f.ctx)
+    await command('sidebar show')
+    const before = f.renderCount()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(f.renderCount()).toBeGreaterThan(before)
+    await command('sidebar hide')
+    const hidden = f.renderCount()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(f.renderCount()).toBe(hidden)
+    await f.emit('session_shutdown')
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('sidebar begins with state and exposes session metadata and current tool', async () => {
+  const f = fakePi()
+  Object.assign(f.ctx, { cwd: '/projects/example/worktree' })
+  await f.emit('session_start')
+  await f.call({ action: 'item', state: 'added', title: 'Build feature' })
+  await f.emit('tool_execution_start', { toolName: 'bash', args: { description: 'Run tests' } })
+  await f.commands.get('session-status').handler('sidebar show', f.ctx)
+  const rendered = f.overlays[0].component.render(64).join('\n')
+  expect(rendered).toContain('Now')
+  expect(rendered).toContain('bash: Run tests')
+  expect(rendered).toContain('abcdef12')
+  expect(rendered).toContain('example/worktree')
+  expect(rendered).not.toContain('Session status')
+  expect(rendered).not.toContain('Open entries')
+  expect(rendered).not.toContain('Nothing is open')
+  await f.emit('session_shutdown')
 })
 
 test('explicit widget commands do not toggle the sidebar and reset clears status', async () => {

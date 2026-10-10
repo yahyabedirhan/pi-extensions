@@ -43,6 +43,8 @@ The footer shows the counts in one line: `1 blocked · 1 decide · progress 1/3 
 - **State**: Blocked, In progress, Settling, Waiting for reply or Settled, as in the mod.
 - **Links**: `⇄` a pull request (green open, purple merged, red closed), `◎` an open issue, `⊙` a closed one. Each label is a terminal link to its page.
 - Each summary list shows its newest few, then `+N more`. The sidebar lists every open entry.
+- The sidebar starts with the current state, without an extra title. Sections have a blank-line gap, matching the Claude Code pane: Now, Session, Effort, Links, decisions, surprises, observations, answered count and last update.
+- Session metadata uses aligned ID, Branch and Worktree rows, followed by progress. Links have their own heading. Each open entry appears once in its section; focus the sidebar to navigate and answer it.
 - The sidebar overlays the right side of the terminal; it does not shrink the transcript. It fills the terminal height and wraps text.
 - The sidebar starts off. Its default width is 64 columns, bounded by the terminal. Resizing has a 12-column minimum unless the terminal is narrower.
 - While the sidebar is visible, it replaces the above-editor widget. Turning it off restores the widget unless you hid it.
@@ -101,7 +103,7 @@ An answer given while the agent works waits until the turn ends (Pi's `followUp`
 ## What does not carry over
 
 - **Tasks, cron jobs and subagents.** Pi has no task list, cron tools or subagent events, so nothing fills them. The kinds `task`, `cron` and `place` stay accepted by `create`, `read`, `update` and `delete`, so the action set stays compatible; the widget does not show them.
-- **Places, the session ID, branch and worktree lines, Now, Answered and Last update.** Pi's footer shows the branch already. Places is a follow-up.
+- **Places.** Cross-repository place tracking is a follow-up. The sidebar displays the current session ID, branch and worktree, the current tool, answered count and last update; metadata is read locally rather than tracked as a separate place.
 - **The observer.** The small model that looks for loops and side issues is not ported yet.
 - **A docked side pane.** Pi's overlay API does not reserve transcript space. The persistent right sidebar covers that space instead. A zero-line widget hosts its owned TUI overlay; closing the sidebar removes only that overlay, not other dialogs.
 

@@ -51,6 +51,6 @@ test('the overlay draws the entries in a frame of the given width', () => {
   const lines = overlayLines(model, plain, 60)
 
   expect(lines[0]).toMatch(/^╭─+╮$/)
-  expect(lines.some(line => line.includes('▶ D1 Ship it? (blocked)'))).toBe(true)
+  expect(lines.some(line => line.includes('▶ D1 · Ship it?'))).toBe(true)
   expect(lines.every(line => line.length === 60)).toBe(true)
 })
