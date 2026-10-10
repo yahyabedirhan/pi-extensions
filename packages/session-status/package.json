@@ -1,0 +1,33 @@
+{
+  "name": "pi-session-status-local",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Session status sidebar and agent status tool for Pi",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yahyabedirhan/pi-packages.git",
+    "directory": "packages/session-status"
+  },
+  "files": [
+    "extensions/**/*.ts",
+    "extensions/**/README.md",
+    "!extensions/**/tests/**",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/session-status/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}
